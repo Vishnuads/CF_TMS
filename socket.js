@@ -1,25 +1,3 @@
-// const { Server } = require("socket.io");
-
-// module.exports = (server) => {
-//   const io = new Server(server, {
-//     cors: {
-//       origin: "http://localhost:5173"
-//     }
-//   });
-
-//   io.on("connection", (socket) => {
-//     socket.on("join-task", (taskId) => {
-//       socket.join(taskId);
-//     });
-
-//     socket.on("send-message", (data) => {
-//       io.to(data.taskId).emit("receive-message", data);
-//     });
-//   });
-// };
-
-
-
 const { Server } = require("socket.io");
 const User = require("./models/User");
 
@@ -30,7 +8,10 @@ module.exports = {
     io = new Server(server, {
       cors: {
         // origin:process.env.CLIENT_URL,
-        origin:"https://task.cinemafactoryacademy.com",
+        origin: [
+          "https://task.cinemafactoryacademy.com",
+           "https://emptask.cinemafactoryacademy.com"
+        ],
         methods: ["GET", "POST"],
         credentials: true,
       },

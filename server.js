@@ -42,7 +42,8 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(
   cors({
     origin: [
-      "https://task.cinemafactoryacademy.com"
+      "https://task.cinemafactoryacademy.com",
+      "https://emptask.cinemafactoryacademy.com"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
     credentials: true,
@@ -62,121 +63,7 @@ app.use("/api", roleRoutes);
 app.use("/api", activityRoutes);
 app.use("/api", screenshotRoutes);
 app.use("/api",workSession)
-   
-// ✅ Socket.IO
-// const { Server } = require("socket.io");
-// const User = require("./models/User");
-// const io = new Server(server, {
-// cors: {
-//     origin: "http://localhost:5173",
-//     methods: ["GET", "POST"],
-//     credentials: true
-//   }});
-
-// app.set("io", io);
-// const onlineUsers = new Map();
-
-
-//  io.on("connection", (socket) => {
-
-//   socket.on("join-user", async (userId) => {
-//     socket.userId = userId;
-//     socket.join(`user:${userId}`);
-
-//     await User.findByIdAndUpdate(userId, { isOnline: true });
-//     io.emit("user-status-changed", { userId, isOnline: true });
-//   });
-
-  
-//   socket.on("join-task", (taskId) => {
-//     socket.join(`task:${taskId}`);
-//     console.log(`Joined task room task:${taskId}`);
-//   });
-
-//   socket.on("disconnect", async () => {
-//     if (!socket.userId) return;
-
-//     await User.findByIdAndUpdate(socket.userId, { isOnline: false });
-//     io.emit("user-status-changed", {
-//       userId: socket.userId,
-//       isOnline: false,
-//     });
-//   });
-//   });
-
-
-
-
-
-// Socket.IO connection
-// io.on("connection", (socket) => {
-//   console.log("User connected:", socket.id);
-
-  
-//   // 🔹 Join user room (GLOBAL notifications)
-
-
-//   // socket.on("join-user", (userId) => {
-//   //   if (!userId) return;
-//   //   socket.join(userId);
-//   //   console.log(`👤 User ${userId} joined personal room`);
-//   // });
-
-
-//   // ===============================
-//   // 👤 USER ONLINE (GLOBAL)
-//   // ===============================
-//  socket.on("join-user", async (userId) => {
-//     if (!userId) return;
-
-//     socket.userId = userId;
-//     onlineUsers.set(userId, socket.id);
-
-//     await User.findByIdAndUpdate(userId, { isOnline: true });
-
-//     io.emit("user-status-changed", {
-//       userId,
-//       isOnline: true,
-//     });
-
-//     console.log("🟢 ONLINE:", userId);
-//   });
-
-   
-//   socket.on("join-task", (taskId) => {
-//     socket.join(taskId);
-//     console.log(`Socket ${socket.id} joined task ${taskId}`);
-//   });
-       
-         
-   
-//   // socket.on("disconnect", () => {
-//   //   console.log("User disconnected:", socket.id);
-//   // });
-
-//   // ===============================
-//   // 🔴 DISCONNECT
-//   // ===============================
-//  socket.on("disconnect", async () => {
-//     const userId = socket.userId;
-//     if (!userId) return;
-
-//     onlineUsers.delete(userId);
-
-//     await User.findByIdAndUpdate(userId, { isOnline: false });
-
-//    io.emit("user-status-changed", {
-//   userId: userId.toString(),
-//   isOnline: false
-// });
-
-
-//     console.log("🔴 OFFLINE:", userId);
-//   });
-
-
-
-// });
+ 
    
  app.get("/", (req, res) => {
   res.send("🚀 ETM API is running successfully!");
