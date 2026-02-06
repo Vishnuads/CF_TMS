@@ -4,18 +4,18 @@ const { auth, adminOnly } = require("../middleware/auth.middleware");
 const userAuth = require("../middleware/chatAuth")
 
 router.post("/screenshots", userAuth, uploadScreenshot);
-router.get("/screenshots", auth, adminOnly, getScreenshots);
+router.get("/screenshots", auth, getScreenshots);
 router.get("/screenshots/me", userAuth, getUserScreenshot);
 
 
 // routes/screenshot.routes.js
 router.get(
   "/screenshots/user/:userId",
-  auth, adminOnly,
+  auth,
   getScreenshotsByUser
 );
 
-router.delete("/screenshots", auth, adminOnly, deleteScreenshots);
+router.delete("/screenshots", auth, deleteScreenshots);
 
 
 module.exports = router;

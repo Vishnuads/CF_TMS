@@ -43,7 +43,8 @@ app.use(
   cors({
     origin: [
       "https://task.cinemafactoryacademy.com",
-      "https://emptask.cinemafactoryacademy.com"
+      "https://emptask.cinemafactoryacademy.com",
+      "http://localhost:5173"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
     credentials: true,

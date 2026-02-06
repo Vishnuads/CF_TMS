@@ -10,7 +10,8 @@ module.exports = {
         // origin:process.env.CLIENT_URL,
         origin: [
           "https://task.cinemafactoryacademy.com",
-           "https://emptask.cinemafactoryacademy.com"
+           "https://emptask.cinemafactoryacademy.com",
+           "http://localhost:5173"
         ],
         methods: ["GET", "POST"],
         credentials: true,
