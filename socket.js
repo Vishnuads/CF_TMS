@@ -29,7 +29,8 @@ module.exports = {
   init: (server) => {
     io = new Server(server, {
       cors: {
-        origin:process.env.CLIENT_URL,
+        // origin:process.env.CLIENT_URL,
+        origin:"https://task.cinemafactoryacademy.com",
         methods: ["GET", "POST"],
         credentials: true,
       },

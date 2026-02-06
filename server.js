@@ -29,7 +29,7 @@ const activityRoutes = require("./routes/activityRoutes")
 const screenshotRoutes = require("./routes/screenshotRoutes")
 const workSession = require("./routes/workSession")
 
-
+    
 app.use(cors())  
 app.use(morgan('dev'));     
 app.use(express.json());
@@ -37,6 +37,18 @@ app.use("/uploads", express.static("uploads"));
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ✅ Middleware
+app.use(
+  cors({
+    origin: [
+      "https://task.cinemafactoryacademy.com"
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
+    credentials: true,
+  })
+);
+
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
