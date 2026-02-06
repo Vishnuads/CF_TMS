@@ -166,7 +166,9 @@ app.use("/api",workSession)
 
 // });
    
- 
+ app.get("/", (req, res) => {
+  res.send("🚀 ETM API is running successfully!");
+});
 
 server.listen(PORT, (err) => {  
   if (err) {
