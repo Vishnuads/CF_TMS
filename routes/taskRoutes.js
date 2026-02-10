@@ -21,7 +21,7 @@ router.post("/task", auth, permission("tasks", "create"), (req, res, next) => {
           message: "File size exceeds 50MB limit",
         });
       }
-
+      
       return res.status(400).json({
         message: err.message,
       });
