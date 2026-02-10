@@ -114,7 +114,7 @@ router.get("/work/:id", authUser, async (req, res) => {
 
 
 
-router.get("/work", auth, adminOnly, async (req, res) => {
+router.get("/work", auth,  async (req, res) => {
   const now = new Date();
 
   // 🔴 AUTO STOP DEAD SESSIONS
