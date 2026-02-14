@@ -252,7 +252,7 @@ router.get("/work/my", authUser, async (req, res) => {
 
 /* ================= AUTO STOP + ADMIN VIEW ================= */
 
-router.get("/work", auth, adminOnly, async (req, res) => {
+router.get("/work", auth, async (req, res) => {
   const now = new Date();
 
   const deadSessions = await WorkSession.find({
