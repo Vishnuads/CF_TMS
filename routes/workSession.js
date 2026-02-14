@@ -647,18 +647,48 @@ router.get("/work", auth, adminOnly, async (req, res) => {
     lastSeenAt: { $lt: new Date(now - AUTO_STOP_LIMIT) },
   });
 
+  // for (const session of deadSessions) {
+  //   session.status = "STOPPED";
+  //   session.endTime = now;
+
+  //   const totalMs = session.endTime - session.startTime;
+  //   session.totalWorkMs = Math.max(
+  //     totalMs - session.totalIdleMs,
+  //     0
+  //   );
+
+  //   await session.save();
+  // }
+
+
   for (const session of deadSessions) {
-    session.status = "STOPPED";
-    session.endTime = now;
 
-    const totalMs = session.endTime - session.startTime;
-    session.totalWorkMs = Math.max(
-      totalMs - session.totalIdleMs,
-      0
-    );
+  const now = new Date();
 
-    await session.save();
+  // STEP 1 — close active idle
+  const activeIdle = session.idleLogs.at(-1);
+
+  if (activeIdle && !activeIdle.to) {
+    activeIdle.to = now;
+
+    session.totalIdleMs +=
+      activeIdle.to - activeIdle.from;
   }
+
+  // STEP 2 — stop session
+  session.status = "STOPPED";
+  session.endTime = now;
+
+  // STEP 3 — recalc totals
+  const totalMs = session.endTime - session.startTime;
+
+  session.totalWorkMs = Math.max(
+    totalMs - session.totalIdleMs,
+    0
+  );
+
+  await session.save();
+}
 
   const sessions = await WorkSession.find()
     .populate({
