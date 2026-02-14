@@ -1,35 +1,63 @@
-// routes/workSession.js
+// // routes/workSession.js
 
-const router = require("express").Router();
-const WorkSession = require("../models/WorkSession");
-const authUser = require("../middleware/chatAuth");
-const { auth, adminOnly } = require("../middleware/auth.middleware");
+// const router = require("express").Router();
+// const WorkSession = require("../models/WorkSession");
+// const authUser = require("../middleware/chatAuth");
+// const { auth, adminOnly } = require("../middleware/auth.middleware");
 
-// const AUTO_STOP_LIMIT = 30 * 1000; 
-const AUTO_STOP_LIMIT = 60 * 60 * 1000; 
+// // const AUTO_STOP_LIMIT = 30 * 1000; 
+// const AUTO_STOP_LIMIT = 60 * 60 * 1000; 
 
 
-/* ================= START WORK ================= */
+// /* ================= START WORK ================= */
+
+
+// // router.post("/work/start", authUser, async (req, res) => {
+// //   try {
+// //     let session = await WorkSession.findOne({
+// //       user: req.user._id,
+// //       status: "RUNNING",
+// //     });
+
+// //     if (session) {
+// //       session.lastSeenAt = new Date();
+// //       await session.save();
+// //       return res.json(session);
+// //     }
+
+// //     session = await WorkSession.create({
+// //       user: req.user._id,
+// //       startTime: new Date(),
+// //       lastSeenAt: new Date(),
+// //       status: "RUNNING",
+// //     });
+
+// //     res.json(session);
+// //   } catch (err) {
+// //     res.status(500).json({ error: err.message });
+// //   }
+// // });
+
 
 
 // router.post("/work/start", authUser, async (req, res) => {
 //   try {
+//     // Check if user already has a running session
 //     let session = await WorkSession.findOne({
 //       user: req.user._id,
 //       status: "RUNNING",
 //     });
 
-//     if (session) {
-//       session.lastSeenAt = new Date();
-//       await session.save();
-//       return res.json(session);
-//     }
+//     if (session) return res.json(session);
 
+//     // Create a new session
 //     session = await WorkSession.create({
 //       user: req.user._id,
 //       startTime: new Date(),
-//       lastSeenAt: new Date(),
 //       status: "RUNNING",
+//       totalWorkMs: 0,
+//       totalIdleMs: 0,
+//       idleLogs: [],
 //     });
 
 //     res.json(session);
@@ -40,34 +68,31 @@ const AUTO_STOP_LIMIT = 60 * 60 * 1000;
 
 
 
-router.post("/work/start", authUser, async (req, res) => {
-  try {
-    // Check if user already has a running session
-    let session = await WorkSession.findOne({
-      user: req.user._id,
-      status: "RUNNING",
-    });
-
-    if (session) return res.json(session);
-
-    // Create a new session
-    session = await WorkSession.create({
-      user: req.user._id,
-      startTime: new Date(),
-      status: "RUNNING",
-      totalWorkMs: 0,
-      totalIdleMs: 0,
-      idleLogs: [],
-    });
-
-    res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 
+// // router.get("/work/my", authUser, async (req, res) => {
+// //   try {
+// //     const session = await WorkSession.findOne({
+// //       user: req.user._id,
+// //       status: "RUNNING",
+// //     });
 
+// //     if (!session) return res.json(null);
+
+// //     const lastIdle = session.idleLogs.at(-1);
+
+// //     const idleActive =
+// //       lastIdle && !lastIdle.to;
+
+// //     res.json({
+// //       session,
+// //       idle: idleActive,
+// //     });
+
+// //   } catch (err) {
+// //     res.status(500).json({ error: err.message });
+// //   }
+// // });
 
 
 // router.get("/work/my", authUser, async (req, res) => {
@@ -80,34 +105,321 @@ router.post("/work/start", authUser, async (req, res) => {
 //     if (!session) return res.json(null);
 
 //     const lastIdle = session.idleLogs.at(-1);
+//     const idleActive = lastIdle && !lastIdle.to;
 
-//     const idleActive =
-//       lastIdle && !lastIdle.to;
+//     res.json({ session, idle: idleActive });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
-//     res.json({
-//       session,
-//       idle: idleActive,
+// /* ================= HEARTBEAT ================= */
+
+// router.post("/work/heartbeat", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       user: req.user._id,
+//       status: "RUNNING",
 //     });
 
+//     if (!session) return res.sendStatus(204);
+
+//     session.lastSeenAt = new Date();
+
+    
+//     await session.save();
+
+//     res.json({ alive: true, sessionId: session._id });
+//   } catch {
+//     res.sendStatus(500);
+//   }
+// });
+
+// /* ================= STOP WORK ================= */
+
+
+
+// router.post("/work/stop/:id", authUser, async (req, res) => {
+//   try {
+//     if (!req.params.id || req.params.id === "undefined") {
+//       return res.status(400).json({ error: "Invalid session ID" });
+//     }
+
+//     const session = await WorkSession.findOne({
+//       _id: req.params.id,
+//       user: req.user._id,
+//       status: "RUNNING",
+//     });
+
+//     if (!session)
+//       return res.status(404).json({ error: "Session not found" });
+
+//     session.endTime = new Date();
+//     session.status = "STOPPED";
+
+//     const totalMs = session.endTime - session.startTime;
+//     session.totalWorkMs = Math.max(
+//       totalMs - session.totalIdleMs,
+//       0
+//     );
+
+//     await session.save();
+
+//     res.json(session);
 //   } catch (err) {
 //     res.status(500).json({ error: err.message });
 //   }
 // });
 
 
-router.get("/work/my", authUser, async (req, res) => {
+// /* ================= IDLE LOG ================= */
+
+
+// /* ================= IDLE START ================= */
+// router.post("/idle/start", authUser, async (req, res) => {
+//   try {
+//     const { reason } = req.body;
+
+//     const session = await WorkSession.findOne({
+//       user: req.user._id,
+//       status: "RUNNING",
+//     });
+
+//     if (!session) return res.status(404).json({ error: "No running session" });
+
+//     const lastIdle = session.idleLogs.at(-1);
+//     if (lastIdle && !lastIdle.to)
+//       return res.status(400).json({ error: "Idle already active" });
+
+//     session.idleLogs.push({ from: new Date(), reason });
+//     await session.save();
+//     res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+// // router.post("/idle/start", authUser, async (req, res) => {
+// //   try {
+// //     const { reason } = req.body;
+
+// //     const session = await WorkSession.findOne({
+// //       user: req.user._id,
+// //       status: "RUNNING",
+// //     });
+
+// //     if (!session)
+// //       return res.status(404).json({ error: "No running session" });
+
+// //     const lastIdle = session.idleLogs.at(-1);
+
+// //     // prevent double idle start
+// //     if (lastIdle && !lastIdle.to)
+// //       return res.status(400).json({ error: "Idle already active" });
+
+// //     session.idleLogs.push({
+// //       from: new Date(),
+// //       reason,
+// //     });
+
+// //     await session.save();
+// //     res.json(session);
+// //   } catch (err) {
+// //     res.status(500).json({ error: err.message });
+// //   }
+// // });
+
+
+// // router.post("/idle/end", authUser, async (req, res) => {
+// //   try {
+// //     const session = await WorkSession.findOne({
+// //       user: req.user._id,
+// //       status: "RUNNING",
+// //     });
+
+// //     if (!session)
+// //       return res.status(404).json({ error: "No running session" });
+
+// //     const idle = session.idleLogs.at(-1);
+
+// //     if (!idle || idle.to)
+// //       return res.status(400).json({ error: "No active idle" });
+
+// //     idle.to = new Date();
+
+// //     const idleMs = idle.to - idle.from;
+// //     session.totalIdleMs += idleMs;
+
+// //     await session.save();
+// //     res.json(session);
+// //   } catch (err) {
+// //     res.status(500).json({ error: err.message });
+// //   }
+// // });
+
+// /* ================= IDLE END ================= */
+// router.post("/idle/end", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       user: req.user._id,
+//       status: "RUNNING",
+//     });
+
+//     if (!session) return res.status(404).json({ error: "No running session" });
+
+//     const idle = session.idleLogs.at(-1);
+//     if (!idle || idle.to) return res.status(400).json({ error: "No active idle" });
+
+//     idle.to = new Date();
+//     const idleMs = idle.to - idle.from;
+//     session.totalIdleMs += idleMs;
+
+//     await session.save();
+//     res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// router.post("/idle", authUser, async (req, res) => {
+//   try {
+//     const { sessionId, from, to, reason } = req.body;
+
+//     const session = await WorkSession.findOne({
+//       _id: sessionId,
+//       user: req.user._id,
+//     });
+
+//     if (!session) return res.sendStatus(404);
+
+//     const idleMs = new Date(to) - new Date(from);
+
+//     session.idleLogs.push({ from, to, reason });
+//     session.totalIdleMs += idleMs;
+
+//     await session.save();
+
+//     res.sendStatus(200);
+//   } catch {
+//     res.sendStatus(500);
+//   }
+// });
+
+
+
+
+
+
+// /* ================= AUTO STOP + ADMIN VIEW ================= */
+
+// router.get("/work", auth, async (req, res) => {
+//   const now = new Date();
+
+//   const deadSessions = await WorkSession.find({
+//     status: "RUNNING",
+//     lastSeenAt: { $lt: new Date(now - AUTO_STOP_LIMIT) },
+//   });
+
+//   for (const session of deadSessions) {
+//     session.status = "STOPPED";
+//     session.endTime = now;
+
+//     const totalMs = session.endTime - session.startTime;
+//     session.totalWorkMs = Math.max(
+//       totalMs - session.totalIdleMs,
+//       0
+//     );
+
+//     await session.save();
+//   }
+
+//   const sessions = await WorkSession.find()
+//     .populate({
+//       path: "user",
+//       select: "name role",
+//       populate: {
+//         path: "role",
+//         select: "name",
+//       },
+//     })
+//     .sort({ createdAt: -1 });
+
+//   res.json(sessions);
+// });
+
+
+
+
+// router.get("/work/:id", authUser, async (req, res) => {
+//   const session = await WorkSession.findOne({
+//     _id: req.params.id,
+//     user: req.user._id,
+//   });
+
+//   if (!session) return res.sendStatus(404);
+// });
+
+
+
+// // routes/workSession.js
+
+
+
+
+
+// module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// routes/workSession.js
+
+const router = require("express").Router();
+const WorkSession = require("../models/WorkSession");
+const authUser = require("../middleware/chatAuth");
+const { auth, adminOnly } = require("../middleware/auth.middleware");
+
+const AUTO_STOP_LIMIT = 30 * 1000; // 1 minute safer window
+
+/* ================= START WORK ================= */
+
+
+
+
+router.post("/work/start", authUser, async (req, res) => {
   try {
-    const session = await WorkSession.findOne({
+    let session = await WorkSession.findOne({
       user: req.user._id,
       status: "RUNNING",
     });
 
-    if (!session) return res.json(null);
+    if (session) {
+      session.lastSeenAt = new Date();
+      await session.save();
+      return res.json(session);
+    }
 
-    const lastIdle = session.idleLogs.at(-1);
-    const idleActive = lastIdle && !lastIdle.to;
+    session = await WorkSession.create({
+      user: req.user._id,
+      startTime: new Date(),
+      lastSeenAt: new Date(),
+      status: "RUNNING",
+    });
 
-    res.json({ session, idle: idleActive });
+    res.json(session);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -136,6 +448,33 @@ router.post("/work/heartbeat", authUser, async (req, res) => {
 });
 
 /* ================= STOP WORK ================= */
+
+// router.post("/work/stop/:id", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       _id: req.params.id,
+//       user: req.user._id,
+//       status: "RUNNING",
+//     });
+
+//     if (!session) return res.sendStatus(404);
+
+//     session.endTime = new Date();
+//     session.status = "STOPPED";
+
+//     const totalMs = session.endTime - session.startTime;
+//     session.totalWorkMs = Math.max(
+//       totalMs - session.totalIdleMs,
+//       0
+//     );
+
+//     await session.save();
+
+//     res.json(session);
+//   } catch {
+//     res.sendStatus(500);
+//   }
+// });
 
 
 
@@ -174,8 +513,6 @@ router.post("/work/stop/:id", authUser, async (req, res) => {
 
 /* ================= IDLE LOG ================= */
 
-
-/* ================= IDLE START ================= */
 router.post("/idle/start", authUser, async (req, res) => {
   try {
     const { reason } = req.body;
@@ -185,13 +522,20 @@ router.post("/idle/start", authUser, async (req, res) => {
       status: "RUNNING",
     });
 
-    if (!session) return res.status(404).json({ error: "No running session" });
+    if (!session)
+      return res.status(404).json({ error: "No running session" });
 
     const lastIdle = session.idleLogs.at(-1);
+
+    // prevent double idle start
     if (lastIdle && !lastIdle.to)
       return res.status(400).json({ error: "Idle already active" });
 
-    session.idleLogs.push({ from: new Date(), reason });
+    session.idleLogs.push({
+      from: new Date(),
+      reason,
+    });
+
     await session.save();
     res.json(session);
   } catch (err) {
@@ -200,65 +544,7 @@ router.post("/idle/start", authUser, async (req, res) => {
 });
 
 
-// router.post("/idle/start", authUser, async (req, res) => {
-//   try {
-//     const { reason } = req.body;
 
-//     const session = await WorkSession.findOne({
-//       user: req.user._id,
-//       status: "RUNNING",
-//     });
-
-//     if (!session)
-//       return res.status(404).json({ error: "No running session" });
-
-//     const lastIdle = session.idleLogs.at(-1);
-
-//     // prevent double idle start
-//     if (lastIdle && !lastIdle.to)
-//       return res.status(400).json({ error: "Idle already active" });
-
-//     session.idleLogs.push({
-//       from: new Date(),
-//       reason,
-//     });
-
-//     await session.save();
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-
-// router.post("/idle/end", authUser, async (req, res) => {
-//   try {
-//     const session = await WorkSession.findOne({
-//       user: req.user._id,
-//       status: "RUNNING",
-//     });
-
-//     if (!session)
-//       return res.status(404).json({ error: "No running session" });
-
-//     const idle = session.idleLogs.at(-1);
-
-//     if (!idle || idle.to)
-//       return res.status(400).json({ error: "No active idle" });
-
-//     idle.to = new Date();
-
-//     const idleMs = idle.to - idle.from;
-//     session.totalIdleMs += idleMs;
-
-//     await session.save();
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
-
-/* ================= IDLE END ================= */
 router.post("/idle/end", authUser, async (req, res) => {
   try {
     const session = await WorkSession.findOne({
@@ -266,12 +552,16 @@ router.post("/idle/end", authUser, async (req, res) => {
       status: "RUNNING",
     });
 
-    if (!session) return res.status(404).json({ error: "No running session" });
+    if (!session)
+      return res.status(404).json({ error: "No running session" });
 
     const idle = session.idleLogs.at(-1);
-    if (!idle || idle.to) return res.status(400).json({ error: "No active idle" });
+
+    if (!idle || idle.to)
+      return res.status(400).json({ error: "No active idle" });
 
     idle.to = new Date();
+
     const idleMs = idle.to - idle.from;
     session.totalIdleMs += idleMs;
 
@@ -281,6 +571,9 @@ router.post("/idle/end", authUser, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 router.post("/idle", authUser, async (req, res) => {
   try {
@@ -306,14 +599,47 @@ router.post("/idle", authUser, async (req, res) => {
   }
 });
 
+/* ================= MY RUNNING SESSION ================= */
+
+// router.get("/work/my", authUser, async (req, res) => {
+//   const session = await WorkSession.findOne({
+//     user: req.user._id,
+//     status: "RUNNING",
+//   });
+
+//   res.json(session);
+// });
 
 
 
+router.get("/work/my", authUser, async (req, res) => {
+  try {
+    const session = await WorkSession.findOne({
+      user: req.user._id,
+      status: "RUNNING",
+    });
+
+    if (!session) return res.json(null);
+
+    const lastIdle = session.idleLogs.at(-1);
+
+    const idleActive =
+      lastIdle && !lastIdle.to;
+
+    res.json({
+      session,
+      idle: idleActive,
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 /* ================= AUTO STOP + ADMIN VIEW ================= */
 
-router.get("/work", auth, async (req, res) => {
+router.get("/work", auth, adminOnly, async (req, res) => {
   const now = new Date();
 
   const deadSessions = await WorkSession.find({
@@ -357,7 +683,6 @@ router.get("/work/:id", authUser, async (req, res) => {
 
   if (!session) return res.sendStatus(404);
 });
-
 
 
 module.exports = router;
