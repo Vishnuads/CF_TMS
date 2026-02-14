@@ -30,6 +30,22 @@ module.exports = {
         io.emit("user-status-changed", { userId, isOnline: true });
       });
 
+
+
+       socket.on("presence-ping", async (userId) => {
+    await User.findByIdAndUpdate(userId, {
+      lastSeen: new Date(),
+      isOnline: true,
+    });
+
+    io.emit("user-status-changed", {
+      userId,
+      isOnline: true,
+    });
+  });
+
+
+  
       // 📌 TASK ROOM
       socket.on("join-task", (taskId) => {
         socket.join(`task:${taskId}`);

@@ -665,7 +665,6 @@ router.get("/work", auth, adminOnly, async (req, res) => {
 
   const now = new Date();
 
-  // STEP 1 — close active idle
   const activeIdle = session.idleLogs.at(-1);
 
   if (activeIdle && !activeIdle.to) {
@@ -675,11 +674,9 @@ router.get("/work", auth, adminOnly, async (req, res) => {
       activeIdle.to - activeIdle.from;
   }
 
-  // STEP 2 — stop session
   session.status = "STOPPED";
   session.endTime = now;
 
-  // STEP 3 — recalc totals
   const totalMs = session.endTime - session.startTime;
 
   session.totalWorkMs = Math.max(

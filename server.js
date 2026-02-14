@@ -29,6 +29,26 @@ const activityRoutes = require("./routes/activityRoutes")
 const screenshotRoutes = require("./routes/screenshotRoutes")
 const workSession = require("./routes/workSession")
 
+
+
+const User = require("./models/User");
+
+// 🔥 AUTO PRESENCE CLEANUP (GLOBAL BACKGROUND JOB)
+setInterval(async () => {
+  try {
+    const timeout = new Date(Date.now() - 30000);
+
+    await User.updateMany(
+      { lastSeen: { $lt: timeout } },
+      { isOnline: false }
+    );
+
+  } catch (err) {
+    console.error("Presence cleanup error:", err);
+  }
+}, 10000);
+
+
     
 app.use(cors())  
 app.use(morgan('dev'));     
