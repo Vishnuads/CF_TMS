@@ -11,18 +11,17 @@ const AUTO_STOP_LIMIT = 5 * 60 * 1000;
 
 /* ================= START WORK ================= */
 
-
-
-
 router.post("/work/start", authUser, async (req, res) => {
   try {
     let session = await WorkSession.findOne({
       user: req.user._id,
-      status: "RUNNING",
+      // status: "RUNNING",
+      status: { $in: ["RUNNING", "PAUSED"] },
     });
 
     if (session) {
       session.lastSeenAt = new Date();
+      session.status = "RUNNING";
       await session.save();
       return res.json(session);
     }
@@ -53,7 +52,6 @@ router.post("/work/heartbeat", authUser, async (req, res) => {
 
     session.lastSeenAt = new Date();
 
-    
     await session.save();
 
     res.json({ alive: true, sessionId: session._id });
@@ -61,9 +59,6 @@ router.post("/work/heartbeat", authUser, async (req, res) => {
     res.sendStatus(500);
   }
 });
-
-
-
 
 router.post("/work/stop/:id", authUser, async (req, res) => {
   try {
@@ -77,17 +72,13 @@ router.post("/work/stop/:id", authUser, async (req, res) => {
       status: "RUNNING",
     });
 
-    if (!session)
-      return res.status(404).json({ error: "Session not found" });
+    if (!session) return res.status(404).json({ error: "Session not found" });
 
     session.endTime = new Date();
     session.status = "STOPPED";
 
     const totalMs = session.endTime - session.startTime;
-    session.totalWorkMs = Math.max(
-      totalMs - session.totalIdleMs,
-      0
-    );
+    session.totalWorkMs = Math.max(totalMs - session.totalIdleMs, 0);
 
     await session.save();
 
@@ -96,7 +87,6 @@ router.post("/work/stop/:id", authUser, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /* ================= IDLE LOG ================= */
 
@@ -109,8 +99,7 @@ router.post("/idle/start", authUser, async (req, res) => {
       status: "RUNNING",
     });
 
-    if (!session)
-      return res.status(404).json({ error: "No running session" });
+    if (!session) return res.status(404).json({ error: "No running session" });
 
     const lastIdle = session.idleLogs.at(-1);
 
@@ -122,7 +111,7 @@ router.post("/idle/start", authUser, async (req, res) => {
       from: new Date(),
       reason,
     });
-
+    session.status = "PAUSED";
     await session.save();
     res.json(session);
   } catch (err) {
@@ -130,17 +119,15 @@ router.post("/idle/start", authUser, async (req, res) => {
   }
 });
 
-
-
 router.post("/idle/end", authUser, async (req, res) => {
   try {
     const session = await WorkSession.findOne({
       user: req.user._id,
-      status: "RUNNING",
+      // status: "RUNNING",
+      status: { $in: ["PAUSED", "RUNNING"] }, // ✅ fallback safety
     });
 
-    if (!session)
-      return res.status(404).json({ error: "No running session" });
+    if (!session) return res.status(404).json({ error: "No running session" });
 
     const idle = session.idleLogs.at(-1);
 
@@ -152,15 +139,14 @@ router.post("/idle/end", authUser, async (req, res) => {
     const idleMs = idle.to - idle.from;
     session.totalIdleMs += idleMs;
 
+    session.status = "RUNNING"; // ✅ resume
+
     await session.save();
     res.json(session);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
-
-
 
 router.post("/idle", authUser, async (req, res) => {
   try {
@@ -188,32 +174,28 @@ router.post("/idle", authUser, async (req, res) => {
 
 /* ================= MY RUNNING SESSION ================= */
 
-
-
 router.get("/work/my", authUser, async (req, res) => {
   try {
     const session = await WorkSession.findOne({
       user: req.user._id,
-      status: "RUNNING",
+      // status: "RUNNING",
+      status: { $in: ["RUNNING", "PAUSED"] },
     });
 
     if (!session) return res.json(null);
 
     const lastIdle = session.idleLogs.at(-1);
 
-    const idleActive =
-      lastIdle && !lastIdle.to;
+    const idleActive = lastIdle && !lastIdle.to;
 
     res.json({
       session,
       idle: idleActive,
     });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /* ================= AUTO STOP + ADMIN VIEW ================= */
 
@@ -264,7 +246,6 @@ router.get("/work/my", authUser, async (req, res) => {
 //   res.json(sessions);
 // });
 
-
 //new
 
 router.get("/work", auth, async (req, res) => {
@@ -287,17 +268,13 @@ router.get("/work", auth, async (req, res) => {
   }
 });
 
-
-
-
 router.post("/work/cleanup", auth, async (req, res) => {
   const now = new Date();
 
   const deadSessions = await WorkSession.find({
-    status: "RUNNING",
-    // lastSeenAt: { $lt: new Date(now - 5 * 60 * 1000) }, // 5 min
-    lastSeenAt: { $lt: new Date(now - AUTO_STOP_LIMIT) }
-
+    // status: "RUNNING",
+    status: { $in: ["RUNNING", "PAUSED"] },
+    lastSeenAt: { $lt: new Date(now - AUTO_STOP_LIMIT) },
   });
 
   for (const session of deadSessions) {
@@ -308,7 +285,6 @@ router.post("/work/cleanup", auth, async (req, res) => {
       // session.totalIdleMs += idle.to - idle.from;
       const idleMs = Math.max(idle.to - idle.from, 0);
       session.totalIdleMs += idleMs;
-
     }
 
     session.status = "STOPPED";
@@ -323,8 +299,6 @@ router.post("/work/cleanup", auth, async (req, res) => {
   res.json({ cleaned: deadSessions.length });
 });
 
-
-
 // router.get("/work/:id", authUser, async (req, res) => {
 //   const session = await WorkSession.findOne({
 //     _id: req.params.id,
@@ -333,7 +307,6 @@ router.post("/work/cleanup", auth, async (req, res) => {
 
 //   if (!session) return res.sendStatus(404);
 // });
-
 
 router.get("/work/:id", authUser, async (req, res) => {
   const session = await WorkSession.findOne({
@@ -345,6 +318,5 @@ router.get("/work/:id", authUser, async (req, res) => {
 
   res.json(session);
 });
-
 
 module.exports = router;

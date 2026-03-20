@@ -81,7 +81,40 @@ exports.updateUser = async (req, res) => {
 };
 
 
+
+
+// exports.updateUser = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { password, ...otherFields } = req.body;
+
+//     let updateData = { ...otherFields };
+
+//     if (password && password.trim() !== "") {
+//       const salt = await bcrypt.genSalt(10);
+//       const hashedPassword = await bcrypt.hash(password, salt);   
+//       updateData.password = hashedPassword;
+//     }
+
+//     const updatedUser = await User.findByIdAndUpdate(
+//       id,
+//       updateData,
+//       { new: true }
+//     ).select("-password"); 
+
+//     res.status(200).json(updatedUser);
+
+//   } catch (error) {
+//     res.status(500).json({ message: "Error updating user", error });
+//   }
+// };
+
+
+
 // ✅ DELETE USER
+
+
+
 exports.deleteUser = async (req, res) => {
   await User.findByIdAndDelete(req.params.id);
   res.json({ message: "User deleted" });

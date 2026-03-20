@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require("http");
 const app = express();
-const path = require('path');
+const path = require('path');  
 const dotenv = require('dotenv');
  dotenv.config({path:path.join(__dirname,'config','.env')})
 const cors = require('cors');
@@ -64,7 +64,8 @@ app.use(
     origin: [
       "https://task.cinemafactoryacademy.com",
       "https://emptask.cinemafactoryacademy.com",
-      "http://localhost:5173"
+      "http://localhost:5173",
+      "http://localhost:5174"
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], 
     credentials: true,

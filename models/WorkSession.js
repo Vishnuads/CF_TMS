@@ -24,7 +24,7 @@ const WorkSessionSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["RUNNING", "STOPPED"],
+     enum: ["RUNNING", "PAUSED", "STOPPED"],
       default: "RUNNING",
     },
         lastSeenAt: { type: Date, default: Date.now }, // 🔥 IMPORTANT
