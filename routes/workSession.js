@@ -19,10 +19,23 @@ router.post("/work/start", authUser, async (req, res) => {
       status: { $in: ["RUNNING", "PAUSED"] },
     });
 
+    // if (session) {
+    //   session.lastSeenAt = new Date();
+    //   session.status = "RUNNING";
+    //   await session.save();
+    //   return res.json(session);
+    // }
+
     if (session) {
       session.lastSeenAt = new Date();
-      session.status = "RUNNING";
-      await session.save();
+
+      // ✅ ONLY update if already running
+      if (session.status === "RUNNING") {
+        await session.save();
+      }
+
+      // ❌ DO NOT change PAUSED to RUNNING here
+
       return res.json(session);
     }
 
@@ -45,7 +58,8 @@ router.post("/work/heartbeat", authUser, async (req, res) => {
   try {
     const session = await WorkSession.findOne({
       user: req.user._id,
-      status: "RUNNING",
+      // status: "RUNNING",
+       status: { $in: ["RUNNING", "PAUSED"] },
     });
 
     if (!session) return res.sendStatus(204);
@@ -272,8 +286,8 @@ router.post("/work/cleanup", auth, async (req, res) => {
   const now = new Date();
 
   const deadSessions = await WorkSession.find({
-    // status: "RUNNING",
-    status: { $in: ["RUNNING", "PAUSED"] },
+    status: "RUNNING",
+    // status: { $in: ["RUNNING", "PAUSED"] },
     lastSeenAt: { $lt: new Date(now - AUTO_STOP_LIMIT) },
   });
 

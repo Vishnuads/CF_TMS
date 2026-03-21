@@ -28,7 +28,7 @@ const roleRoutes = require("./routes/roleRoutes")
 const activityRoutes = require("./routes/activityRoutes")
 const screenshotRoutes = require("./routes/screenshotRoutes")
 const workSession = require("./routes/workSession")
-
+const screenshotElectron = require("./routes/screenshotElectron");
 
 
 const User = require("./models/User");
@@ -85,6 +85,7 @@ app.use("/api", roleRoutes);
 app.use("/api", activityRoutes);
 app.use("/api", screenshotRoutes);
 app.use("/api",workSession)
+app.use("/api/electron",screenshotElectron)
  
    
  app.get("/", (req, res) => {
