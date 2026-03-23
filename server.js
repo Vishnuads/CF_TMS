@@ -89,7 +89,7 @@ app.use("/api/electron",screenshotElectron)
  
    
  app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully! session");
+  res.send("🚀 ETM API is running successfully!");
 });
 
 server.listen(PORT, (err) => {  
