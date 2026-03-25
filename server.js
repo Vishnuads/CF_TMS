@@ -94,6 +94,9 @@ app.use("/api/electron",screenshotElectron)
  
 
 
+ app.get("/", (req, res) => {
+  res.send("🚀 ETM API is running successfully! updated");
+});
 
 
 
