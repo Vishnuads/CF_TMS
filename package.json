@@ -20,6 +20,7 @@
     "electron": "^41.0.3",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
+    "fs-extra": "^11.3.4",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.2",
     "morgan": "^1.10.1",

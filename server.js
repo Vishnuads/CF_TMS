@@ -28,8 +28,9 @@ const roleRoutes = require("./routes/roleRoutes")
 const activityRoutes = require("./routes/activityRoutes")
 const screenshotRoutes = require("./routes/screenshotRoutes")
 const workSession = require("./routes/workSession")
-const screenshotElectron = require("./routes/screenshotElectron");
+// const screenshotElectron = require("./routes/screenshotElectron.routes");
 
+const screenshotElectron = require("./routes/screenshotElectron");
 
 const User = require("./models/User");
 
@@ -55,8 +56,12 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+
+// app.use(express.json({ limit: "10mb" }));
+// app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ✅ Middleware   
 app.use(
@@ -87,10 +92,10 @@ app.use("/api", screenshotRoutes);
 app.use("/api",workSession)
 app.use("/api/electron",screenshotElectron)
  
-   
- app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully!");
-});
+
+
+
+
 
 server.listen(PORT, (err) => {  
   if (err) {
