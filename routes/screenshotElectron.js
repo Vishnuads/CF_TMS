@@ -152,49 +152,97 @@ const toUrl = (subfolder, filename) => `/uploads/${subfolder}/${filename}`;
 //
 //  Idempotent: re-queued offline uploads won't create duplicate DB records.
 // ═══════════════════════════════════════════════════════════════════════════
+// router.post(
+//   "/screenshot/save",
+//   authUser,
+//   upload.single("file"),
+//   async (req, res) => {
+//     try {
+//       const userId = req.user._id.toString();
+//       let filename, localPath;
+
+//       if (req.file) {
+//         // ── Mode B: binary upload ───────────────────────────────────────
+//         filename = req.file.filename;
+//         localPath = req.file.path; // multer already wrote it here
+//       } else {
+//         // ── Mode A: JSON { filename, path } ────────────────────────────
+//         filename = req.body.filename;
+//         localPath = req.body.path;
+
+//         if (!filename || !localPath) {
+//           return res
+//             .status(400)
+//             .json({ error: "filename and path are required" });
+//         }
+
+//         // Copy from Electron's capture folder into our uploads folder
+//         // const userFolder = path.join(SCREENSHOTS_FOLDER, userId);
+//         // await fs.ensureDir(userFolder);
+//         // const destPath = path.join(userFolder, filename);
+
+//         await fs.ensureDir(SCREENSHOTS_FOLDER);
+//         const destPath = path.join(SCREENSHOTS_FOLDER, filename);
+
+//         // Skip copy if already present — handles re-queued offline retries
+//         if (!(await fs.pathExists(destPath))) {
+//           await fs.copy(localPath, destPath);
+//         }
+//       }
+
+//       // const imageUrl = toUrl("screenshots", userId, filename);
+
+//       const imageUrl = toUrl("screenshots", filename);
+
+//       // findOneAndUpdate with $setOnInsert = safe upsert; no duplicate writes
+//       const doc = await Screenshot.findOneAndUpdate(
+//         { user: req.user._id, filename },
+//         {
+//           $setOnInsert: {
+//             user: req.user._id,
+//             filename,
+//             imageUrl,
+//             localPath,
+//             capturedAt: new Date(),
+//           },
+//         },
+//         { upsert: true, new: true, setDefaultsOnInsert: true },
+//       );
+
+//       return res.status(201).json({
+//         message: "Screenshot saved",
+//         id: doc._id,
+//         imageUrl,
+//       });
+//     } catch (err) {
+//       console.error("screenshot/save error:", err.message);
+//       res.status(500).json({ error: err.message });
+//     }
+//   },
+// );
+
+
+
+
+
+
+
+
 router.post(
   "/screenshot/save",
   authUser,
   upload.single("file"),
   async (req, res) => {
     try {
-      const userId = req.user._id.toString();
-      let filename, localPath;
-
-      if (req.file) {
-        // ── Mode B: binary upload ───────────────────────────────────────
-        filename = req.file.filename;
-        localPath = req.file.path; // multer already wrote it here
-      } else {
-        // ── Mode A: JSON { filename, path } ────────────────────────────
-        filename = req.body.filename;
-        localPath = req.body.path;
-
-        if (!filename || !localPath) {
-          return res
-            .status(400)
-            .json({ error: "filename and path are required" });
-        }
-
-        // Copy from Electron's capture folder into our uploads folder
-        // const userFolder = path.join(SCREENSHOTS_FOLDER, userId);
-        // await fs.ensureDir(userFolder);
-        // const destPath = path.join(userFolder, filename);
-
-        await fs.ensureDir(SCREENSHOTS_FOLDER);
-        const destPath = path.join(SCREENSHOTS_FOLDER, filename);
-
-        // Skip copy if already present — handles re-queued offline retries
-        if (!(await fs.pathExists(destPath))) {
-          await fs.copy(localPath, destPath);
-        }
+      if (!req.file) {
+        return res.status(400).json({ error: "File is required" });
       }
 
-      // const imageUrl = toUrl("screenshots", userId, filename);
+      const filename = req.file.filename;
 
-      const imageUrl = toUrl("screenshots", filename);
+      const imageUrl = `/uploads/screenshots/${filename}`;
 
-      // findOneAndUpdate with $setOnInsert = safe upsert; no duplicate writes
+      // ✅ Save to DB (NO localPath)
       const doc = await Screenshot.findOneAndUpdate(
         { user: req.user._id, filename },
         {
@@ -202,23 +250,24 @@ router.post(
             user: req.user._id,
             filename,
             imageUrl,
-            localPath,
             capturedAt: new Date(),
           },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        { upsert: true, new: true }
       );
 
-      return res.status(201).json({
+      console.log("✅ Saved:", filename);
+
+      res.status(201).json({
         message: "Screenshot saved",
-        id: doc._id,
         imageUrl,
       });
+
     } catch (err) {
-      console.error("screenshot/save error:", err.message);
+      console.error("❌ screenshot/save error:", err.message);
       res.status(500).json({ error: err.message });
     }
-  },
+  }
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
