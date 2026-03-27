@@ -288,311 +288,311 @@
 
 // // routes/workSession.js
 
-// const router = require("express").Router();
-// const WorkSession = require("../models/WorkSession");
-// const authUser = require("../middleware/chatAuth");
-// const { auth } = require("../middleware/auth.middleware");
+const router = require("express").Router();
+const WorkSession = require("../models/WorkSession");
+const authUser = require("../middleware/chatAuth");
+const { auth } = require("../middleware/auth.middleware");
 
-// // Sessions older than 5 minutes without a heartbeat are considered dead
-// const AUTO_STOP_LIMIT = 30 * 60 * 1000;
+// Sessions older than 5 minutes without a heartbeat are considered dead
+const AUTO_STOP_LIMIT = 30 * 60 * 1000;
 
-// // ─── helper: close any open idle log and compute totals ───────────────────────
-// function finaliseSession(session, now) {
-//   const lastIdle = session.idleLogs.at(-1);
+// ─── helper: close any open idle log and compute totals ───────────────────────
+function finaliseSession(session, now) {
+  const lastIdle = session.idleLogs.at(-1);
 
-//   if (lastIdle && !lastIdle.to) {
-//     lastIdle.to = now;
-//     const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
-//     session.totalIdleMs += idleMs;
-//   }
+  if (lastIdle && !lastIdle.to) {
+    lastIdle.to = now;
+    const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
+    session.totalIdleMs += idleMs;
+  }
 
-//   session.status  = "STOPPED";
-//   session.endTime = now;
+  session.status  = "STOPPED";
+  session.endTime = now;
 
-//   const totalMs = now - session.startTime;
-//   session.totalWorkMs = Math.max(totalMs - session.totalIdleMs, 0);
-// }
+  const totalMs = now - session.startTime;
+  session.totalWorkMs = Math.max(totalMs - session.totalIdleMs, 0);
+}
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  START WORK
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/work/start", authUser, async (req, res) => {
-//   try {
-//     // return existing active session if one exists (RUNNING or PAUSED)
-//     let session = await WorkSession.findOne({
-//       user:   req.user._id,
-//       status: { $in: ["RUNNING", "PAUSED"] },
-//     });
+// ═══════════════════════════════════════════════════════════════════════════
+//  START WORK
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/work/start", authUser, async (req, res) => {
+  try {
+    // return existing active session if one exists (RUNNING or PAUSED)
+    let session = await WorkSession.findOne({
+      user:   req.user._id,
+      status: { $in: ["RUNNING", "PAUSED"] },
+    });
 
-//     if (session) {
-//       // only touch lastSeenAt for RUNNING sessions
-//       // do NOT flip PAUSED → RUNNING here
-//       if (session.status === "RUNNING") {
-//         session.lastSeenAt = new Date();
-//         await session.save();
-//       }
-//       return res.json(session);
-//     }
+    if (session) {
+      // only touch lastSeenAt for RUNNING sessions
+      // do NOT flip PAUSED → RUNNING here
+      if (session.status === "RUNNING") {
+        session.lastSeenAt = new Date();
+        await session.save();
+      }
+      return res.json(session);
+    }
 
-//     // create a brand-new session
-//     session = await WorkSession.create({
-//       user:        req.user._id,
-//       startTime:   new Date(),
-//       lastSeenAt:  new Date(),
-//       status:      "RUNNING",
-//     });
+    // create a brand-new session
+    session = await WorkSession.create({
+      user:        req.user._id,
+      startTime:   new Date(),
+      lastSeenAt:  new Date(),
+      status:      "RUNNING",
+    });
 
-//     res.status(201).json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.status(201).json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  HEARTBEAT
-// //  Keeps the session alive. Works for both RUNNING and PAUSED states so a
-// //  paused employee's session is never auto-killed by the cleanup job.
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/work/heartbeat", authUser, async (req, res) => {
-//   try {
-//     const session = await WorkSession.findOne({
-//       user:   req.user._id,
-//       status: { $in: ["RUNNING", "PAUSED"] },
-//     });
+// ═══════════════════════════════════════════════════════════════════════════
+//  HEARTBEAT
+//  Keeps the session alive. Works for both RUNNING and PAUSED states so a
+//  paused employee's session is never auto-killed by the cleanup job.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/work/heartbeat", authUser, async (req, res) => {
+  try {
+    const session = await WorkSession.findOne({
+      user:   req.user._id,
+      status: { $in: ["RUNNING", "PAUSED"] },
+    });
 
-//     if (!session) return res.sendStatus(204); // no active session — nothing to keep alive
+    if (!session) return res.sendStatus(204); // no active session — nothing to keep alive
 
-//     session.lastSeenAt = new Date();
-//     await session.save();
+    session.lastSeenAt = new Date();
+    await session.save();
 
-//     res.json({ alive: true, sessionId: session._id, status: session.status });
-//   } catch {
-//     res.sendStatus(500);
-//   }
-// });
+    res.json({ alive: true, sessionId: session._id, status: session.status });
+  } catch {
+    res.sendStatus(500);
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  STOP WORK
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/work/stop/:id", authUser, async (req, res) => {
-//   try {
-//     const { id } = req.params;
+// ═══════════════════════════════════════════════════════════════════════════
+//  STOP WORK
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/work/stop/:id", authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
 
-//     if (!id || id === "undefined") {
-//       return res.status(400).json({ error: "Invalid session ID" });
-//     }
+    if (!id || id === "undefined") {
+      return res.status(400).json({ error: "Invalid session ID" });
+    }
 
-//     // allow stopping both RUNNING and PAUSED sessions (e.g. End Day while paused)
-//     const session = await WorkSession.findOne({
-//       _id:    id,
-//       user:   req.user._id,
-//       status: { $in: ["RUNNING", "PAUSED"] },
-//     });
+    // allow stopping both RUNNING and PAUSED sessions (e.g. End Day while paused)
+    const session = await WorkSession.findOne({
+      _id:    id,
+      user:   req.user._id,
+      status: { $in: ["RUNNING", "PAUSED"] },
+    });
 
-//     if (!session) {
-//       return res.status(404).json({ error: "Session not found or already stopped" });
-//     }
+    if (!session) {
+      return res.status(404).json({ error: "Session not found or already stopped" });
+    }
 
-//     finaliseSession(session, new Date());
-//     await session.save();
+    finaliseSession(session, new Date());
+    await session.save();
 
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  IDLE — START (pause work)
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/idle/start", authUser, async (req, res) => {
-//   try {
-//     const { reason } = req.body;
+// ═══════════════════════════════════════════════════════════════════════════
+//  IDLE — START (pause work)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/idle/start", authUser, async (req, res) => {
+  try {
+    const { reason } = req.body;
 
-//     if (!reason?.trim()) {
-//       return res.status(400).json({ error: "Reason is required" });
-//     }
+    if (!reason?.trim()) {
+      return res.status(400).json({ error: "Reason is required" });
+    }
 
-//     const session = await WorkSession.findOne({
-//       user:   req.user._id,
-//       status: "RUNNING",
-//     });
+    const session = await WorkSession.findOne({
+      user:   req.user._id,
+      status: "RUNNING",
+    });
 
-//     if (!session) {
-//       return res.status(404).json({ error: "No running session found" });
-//     }
+    if (!session) {
+      return res.status(404).json({ error: "No running session found" });
+    }
 
-//     const lastIdle = session.idleLogs.at(-1);
+    const lastIdle = session.idleLogs.at(-1);
 
-//     // prevent double idle start
-//     if (lastIdle && !lastIdle.to) {
-//       return res.status(400).json({ error: "Session is already paused" });
-//     }
+    // prevent double idle start
+    if (lastIdle && !lastIdle.to) {
+      return res.status(400).json({ error: "Session is already paused" });
+    }
 
-//     session.idleLogs.push({ from: new Date(), reason: reason.trim() });
-//     session.status     = "PAUSED";
-//     session.lastSeenAt = new Date();
+    session.idleLogs.push({ from: new Date(), reason: reason.trim() });
+    session.status     = "PAUSED";
+    session.lastSeenAt = new Date();
 
-//     await session.save();
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    await session.save();
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  IDLE — END (resume work)
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/idle/end", authUser, async (req, res) => {
-//   try {
-//     // accept both PAUSED and RUNNING as a safety fallback
-//     const session = await WorkSession.findOne({
-//       user:   req.user._id,
-//       status: { $in: ["PAUSED", "RUNNING"] },
-//     });
+// ═══════════════════════════════════════════════════════════════════════════
+//  IDLE — END (resume work)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/idle/end", authUser, async (req, res) => {
+  try {
+    // accept both PAUSED and RUNNING as a safety fallback
+    const session = await WorkSession.findOne({
+      user:   req.user._id,
+      status: { $in: ["PAUSED", "RUNNING"] },
+    });
 
-//     if (!session) {
-//       return res.status(404).json({ error: "No active session found" });
-//     }
+    if (!session) {
+      return res.status(404).json({ error: "No active session found" });
+    }
 
-//     const lastIdle = session.idleLogs.at(-1);
+    const lastIdle = session.idleLogs.at(-1);
 
-//     if (!lastIdle || lastIdle.to) {
-//       return res.status(400).json({ error: "No active idle period to end" });
-//     }
+    if (!lastIdle || lastIdle.to) {
+      return res.status(400).json({ error: "No active idle period to end" });
+    }
 
-//     lastIdle.to = new Date();
+    lastIdle.to = new Date();
 
-//     const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
-//     session.totalIdleMs += idleMs;
+    const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
+    session.totalIdleMs += idleMs;
 
-//     session.status     = "RUNNING";
-//     session.lastSeenAt = new Date();
+    session.status     = "RUNNING";
+    session.lastSeenAt = new Date();
 
-//     await session.save();
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    await session.save();
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  IDLE — MANUAL LOG (bulk insert, used by admin corrections)
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/idle", authUser, async (req, res) => {
-//   try {
-//     const { sessionId, from, to, reason } = req.body;
+// ═══════════════════════════════════════════════════════════════════════════
+//  IDLE — MANUAL LOG (bulk insert, used by admin corrections)
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/idle", authUser, async (req, res) => {
+  try {
+    const { sessionId, from, to, reason } = req.body;
 
-//     if (!sessionId || !from || !to) {
-//       return res.status(400).json({ error: "sessionId, from, to are required" });
-//     }
+    if (!sessionId || !from || !to) {
+      return res.status(400).json({ error: "sessionId, from, to are required" });
+    }
 
-//     const session = await WorkSession.findOne({
-//       _id:  sessionId,
-//       user: req.user._id,
-//     });
+    const session = await WorkSession.findOne({
+      _id:  sessionId,
+      user: req.user._id,
+    });
 
-//     if (!session) return res.sendStatus(404);
+    if (!session) return res.sendStatus(404);
 
-//     const idleMs = Math.max(new Date(to) - new Date(from), 0);
+    const idleMs = Math.max(new Date(to) - new Date(from), 0);
 
-//     session.idleLogs.push({ from, to, reason: reason || "" });
-//     session.totalIdleMs += idleMs;
+    session.idleLogs.push({ from, to, reason: reason || "" });
+    session.totalIdleMs += idleMs;
 
-//     await session.save();
-//     res.sendStatus(200);
-//   } catch {
-//     res.sendStatus(500);
-//   }
-// });
+    await session.save();
+    res.sendStatus(200);
+  } catch {
+    res.sendStatus(500);
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  MY SESSION — used by frontend on restore / mount
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.get("/work/my", authUser, async (req, res) => {
-//   try {
-//     const session = await WorkSession.findOne({
-//       user:   req.user._id,
-//       status: { $in: ["RUNNING", "PAUSED"] },
-//     });
+// ═══════════════════════════════════════════════════════════════════════════
+//  MY SESSION — used by frontend on restore / mount
+// ═══════════════════════════════════════════════════════════════════════════
+router.get("/work/my", authUser, async (req, res) => {
+  try {
+    const session = await WorkSession.findOne({
+      user:   req.user._id,
+      status: { $in: ["RUNNING", "PAUSED"] },
+    });
 
-//     // explicit null so frontend knows "no session" vs a server error
-//     if (!session) return res.json(null);
+    // explicit null so frontend knows "no session" vs a server error
+    if (!session) return res.json(null);
 
-//     const lastIdle  = session.idleLogs.at(-1);
-//     const idleActive = Boolean(lastIdle && !lastIdle.to);
+    const lastIdle  = session.idleLogs.at(-1);
+    const idleActive = Boolean(lastIdle && !lastIdle.to);
 
-//     res.json({ session, idle: idleActive });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.json({ session, idle: idleActive });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  ADMIN — list all sessions
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.get("/work", auth, async (req, res) => {
-//   try {
-//     const sessions = await WorkSession.find()
-//       .populate({
-//         path:     "user",
-//         select:   "name role",
-//         populate: { path: "role", select: "name" },
-//       })
-//       .sort({ createdAt: -1 });
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN — list all sessions
+// ═══════════════════════════════════════════════════════════════════════════
+router.get("/work", auth, async (req, res) => {
+  try {
+    const sessions = await WorkSession.find()
+      .populate({
+        path:     "user",
+        select:   "name role",
+        populate: { path: "role", select: "name" },
+      })
+      .sort({ createdAt: -1 });
 
-//     res.json(sessions);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.json(sessions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  ADMIN — cleanup dead sessions (no heartbeat for AUTO_STOP_LIMIT ms)
-// //  Call this from a cron job or a scheduler, e.g. every 5 minutes.
-// //  Only stops RUNNING sessions; PAUSED sessions are kept alive intentionally.
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.post("/work/cleanup", auth, async (req, res) => {
-//   try {
-//     const now        = new Date();
-//     const cutoff     = new Date(now - AUTO_STOP_LIMIT);
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADMIN — cleanup dead sessions (no heartbeat for AUTO_STOP_LIMIT ms)
+//  Call this from a cron job or a scheduler, e.g. every 5 minutes.
+//  Only stops RUNNING sessions; PAUSED sessions are kept alive intentionally.
+// ═══════════════════════════════════════════════════════════════════════════
+router.post("/work/cleanup", auth, async (req, res) => {
+  try {
+    const now        = new Date();
+    const cutoff     = new Date(now - AUTO_STOP_LIMIT);
 
-//     const deadSessions = await WorkSession.find({
-//       status:      "RUNNING",           // only kill RUNNING; leave PAUSED alone
-//       lastSeenAt:  { $lt: cutoff },
-//     });
+    const deadSessions = await WorkSession.find({
+      status:      "RUNNING",           // only kill RUNNING; leave PAUSED alone
+      lastSeenAt:  { $lt: cutoff },
+    });
 
-//     for (const session of deadSessions) {
-//       finaliseSession(session, now);
-//       await session.save();
-//     }
+    for (const session of deadSessions) {
+      finaliseSession(session, now);
+      await session.save();
+    }
 
-//     res.json({ cleaned: deadSessions.length });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.json({ cleaned: deadSessions.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// // ═══════════════════════════════════════════════════════════════════════════
-// //  GET single session by id
-// // ═══════════════════════════════════════════════════════════════════════════
-// router.get("/work/:id", authUser, async (req, res) => {
-//   try {
-//     const session = await WorkSession.findOne({
-//       _id:  req.params.id,
-//       user: req.user._id,
-//     });
+// ═══════════════════════════════════════════════════════════════════════════
+//  GET single session by id
+// ═══════════════════════════════════════════════════════════════════════════
+router.get("/work/:id", authUser, async (req, res) => {
+  try {
+    const session = await WorkSession.findOne({
+      _id:  req.params.id,
+      user: req.user._id,
+    });
 
-//     if (!session) return res.sendStatus(404);
+    if (!session) return res.sendStatus(404);
 
-//     res.json(session);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// module.exports = router;
+module.exports = router;
 
 
 
@@ -645,326 +645,326 @@
 
 
 
-const router      = require("express").Router();
-const WorkSession = require("../models/WorkSession");
-const authUser    = require("../middleware/chatAuth");
-const { auth }    = require("../middleware/auth.middleware");
+// const router      = require("express").Router();
+// const WorkSession = require("../models/WorkSession");
+// const authUser    = require("../middleware/chatAuth");
+// const { auth }    = require("../middleware/auth.middleware");
 
-// Sessions with no heartbeat for longer than this are considered dead (RUNNING only)
-const AUTO_STOP_LIMIT = 30 * 60 * 1000; // 5 minutes
+// // Sessions with no heartbeat for longer than this are considered dead (RUNNING only)
+// const AUTO_STOP_LIMIT = 5 * 60 * 1000; // 5 minutes
 
-// ─── helper: close any open idle log and compute totals ──────────────────────
-function finaliseSession(session, now) {
-  const lastIdle = session.idleLogs.at(-1);
+// // ─── helper: close any open idle log and compute totals ──────────────────────
+// function finaliseSession(session, now) {
+//   const lastIdle = session.idleLogs.at(-1);
 
-  if (lastIdle && !lastIdle.to) {
-    lastIdle.to  = now;
-    const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
-    session.totalIdleMs += idleMs;
-  }
+//   if (lastIdle && !lastIdle.to) {
+//     lastIdle.to  = now;
+//     const idleMs = Math.max(lastIdle.to - lastIdle.from, 0);
+//     session.totalIdleMs += idleMs;
+//   }
 
-  session.status  = "STOPPED";
-  session.endTime = now;
+//   session.status  = "STOPPED";
+//   session.endTime = now;
 
-  const totalMs       = now - session.startTime;
-  session.totalWorkMs = Math.max(totalMs - session.totalIdleMs, 0);
-}
+//   const totalMs       = now - session.startTime;
+//   session.totalWorkMs = Math.max(totalMs - session.totalIdleMs, 0);
+// }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  START WORK
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/work/start", authUser, async (req, res) => {
-  try {
-    // Return any existing active session — do NOT change its state
-    let session = await WorkSession.findOne({
-      user:   req.user._id,
-      status: { $in: ["RUNNING", "PAUSED"] },
-    });
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  START WORK
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/work/start", authUser, async (req, res) => {
+//   try {
+//     // Return any existing active session — do NOT change its state
+//     let session = await WorkSession.findOne({
+//       user:   req.user._id,
+//       status: { $in: ["RUNNING", "PAUSED"] },
+//     });
 
-    if (session) {
-      // Only update lastSeenAt for RUNNING — PAUSED must not flip to RUNNING here
-      if (session.status === "RUNNING") {
-        session.lastSeenAt = new Date();
-        await session.save();
-      }
-      return res.json(session);
-    }
+//     if (session) {
+//       // Only update lastSeenAt for RUNNING — PAUSED must not flip to RUNNING here
+//       if (session.status === "RUNNING") {
+//         session.lastSeenAt = new Date();
+//         await session.save();
+//       }
+//       return res.json(session);
+//     }
 
-    // No existing session — create a fresh one
-    session = await WorkSession.create({
-      user:       req.user._id,
-      startTime:  new Date(),
-      lastSeenAt: new Date(),
-      status:     "RUNNING",
-    });
+//     // No existing session — create a fresh one
+//     session = await WorkSession.create({
+//       user:       req.user._id,
+//       startTime:  new Date(),
+//       lastSeenAt: new Date(),
+//       status:     "RUNNING",
+//     });
 
-    return res.status(201).json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+//     return res.status(201).json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  HEARTBEAT
-//  Keeps any active session alive. Works for both RUNNING and PAUSED states
-//  so a paused employee's session is never auto-killed by the cleanup job.
-//  Called every 10 s by the frontend; safe to call even when offline queued.
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/work/heartbeat", authUser, async (req, res) => {
-  try {
-    const session = await WorkSession.findOne({
-      user:   req.user._id,
-      status: { $in: ["RUNNING", "PAUSED"] },
-    });
-
-    // No active session — nothing to keep alive, not an error
-    if (!session) return res.sendStatus(204);
-
-    session.lastSeenAt = new Date();
-    await session.save();
-
-    res.json({ alive: true, sessionId: session._id, status: session.status });
-  } catch {
-    res.sendStatus(500);
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  STOP WORK
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/work/stop/:id", authUser, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!id || id === "undefined") {
-      return res.status(400).json({ error: "Invalid session ID" });
-    }
-
-    const session = await WorkSession.findOne({
-      _id:    id,
-      user:   req.user._id,
-      status: { $in: ["RUNNING", "PAUSED"] },
-    });
-
-    if (!session) {
-      return res.status(404).json({ error: "Session not found or already stopped" });
-    }
-
-    finaliseSession(session, new Date());
-    await session.save();
-
-    return res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  IDLE — START (pause work)
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/idle/start", authUser, async (req, res) => {
-  try {
-    const { reason } = req.body;
-
-    if (!reason?.trim()) {
-      return res.status(400).json({ error: "Reason is required" });
-    }
-
-    const session = await WorkSession.findOne({
-      user:   req.user._id,
-      status: "RUNNING",
-    });
-
-    if (!session) {
-      return res.status(404).json({ error: "No running session found" });
-    }
-
-    // Prevent double idle start
-    const lastIdle = session.idleLogs.at(-1);
-    if (lastIdle && !lastIdle.to) {
-      return res.status(400).json({ error: "Session is already paused" });
-    }
-
-    session.idleLogs.push({ from: new Date(), reason: reason.trim() });
-    session.status     = "PAUSED";
-    session.lastSeenAt = new Date();
-
-    await session.save();
-    return res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  IDLE — END (resume work)
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/idle/end", authUser, async (req, res) => {
-  try {
-    const session = await WorkSession.findOne({
-      user:   req.user._id,
-      status: { $in: ["PAUSED", "RUNNING"] },
-    });
-
-    if (!session) {
-      return res.status(404).json({ error: "No active session found" });
-    }
-
-    const lastIdle = session.idleLogs.at(-1);
-
-    if (!lastIdle || lastIdle.to) {
-      return res.status(400).json({ error: "No active idle period to end" });
-    }
-
-    lastIdle.to = new Date();
-
-    const idleMs         = Math.max(lastIdle.to - lastIdle.from, 0);
-    session.totalIdleMs += idleMs;
-    session.status       = "RUNNING";
-    session.lastSeenAt   = new Date();
-
-    await session.save();
-    return res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  IDLE — MANUAL LOG (bulk insert, admin corrections)
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/idle", authUser, async (req, res) => {
-  try {
-    const { sessionId, from, to, reason } = req.body;
-
-    if (!sessionId || !from || !to) {
-      return res.status(400).json({ error: "sessionId, from, to are required" });
-    }
-
-    const session = await WorkSession.findOne({
-      _id:  sessionId,
-      user: req.user._id,
-    });
-
-    if (!session) return res.sendStatus(404);
-
-    const idleMs         = Math.max(new Date(to) - new Date(from), 0);
-    session.idleLogs.push({ from, to, reason: reason || "" });
-    session.totalIdleMs += idleMs;
-
-    await session.save();
-    return res.sendStatus(200);
-  } catch {
-    res.sendStatus(500);
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  MY SESSION — used by frontend on restore / mount
-//
-//  FIX: Always returns { session, idle } — never bare null.
-//  When there is no active session, session is null and idle is false.
-//  This lets the frontend safely do `data?.session` without crashing on
-//  the top-level null that the old code returned.
-// ═══════════════════════════════════════════════════════════════════════════
-// router.get("/work/my", authUser, async (req, res) => {
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  HEARTBEAT
+// //  Keeps any active session alive. Works for both RUNNING and PAUSED states
+// //  so a paused employee's session is never auto-killed by the cleanup job.
+// //  Called every 10 s by the frontend; safe to call even when offline queued.
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/work/heartbeat", authUser, async (req, res) => {
 //   try {
 //     const session = await WorkSession.findOne({
 //       user:   req.user._id,
 //       status: { $in: ["RUNNING", "PAUSED"] },
 //     });
 
-//     if (!session) {
-//       return res.json({ session: null, idle: false });
+//     // No active session — nothing to keep alive, not an error
+//     if (!session) return res.sendStatus(204);
+
+//     session.lastSeenAt = new Date();
+//     await session.save();
+
+//     res.json({ alive: true, sessionId: session._id, status: session.status });
+//   } catch {
+//     res.sendStatus(500);
+//   }
+// });
+
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  STOP WORK
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/work/stop/:id", authUser, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     if (!id || id === "undefined") {
+//       return res.status(400).json({ error: "Invalid session ID" });
 //     }
-//     const lastIdle  = session.idleLogs.at(-1);
+
+//     const session = await WorkSession.findOne({
+//       _id:    id,
+//       user:   req.user._id,
+//       status: { $in: ["RUNNING", "PAUSED"] },
+//     });
+
+//     if (!session) {
+//       return res.status(404).json({ error: "Session not found or already stopped" });
+//     }
+
+//     finaliseSession(session, new Date());
+//     await session.save();
+
+//     return res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  IDLE — START (pause work)
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/idle/start", authUser, async (req, res) => {
+//   try {
+//     const { reason } = req.body;
+
+//     if (!reason?.trim()) {
+//       return res.status(400).json({ error: "Reason is required" });
+//     }
+
+//     const session = await WorkSession.findOne({
+//       user:   req.user._id,
+//       status: "RUNNING",
+//     });
+
+//     if (!session) {
+//       return res.status(404).json({ error: "No running session found" });
+//     }
+
+//     // Prevent double idle start
+//     const lastIdle = session.idleLogs.at(-1);
+//     if (lastIdle && !lastIdle.to) {
+//       return res.status(400).json({ error: "Session is already paused" });
+//     }
+
+//     session.idleLogs.push({ from: new Date(), reason: reason.trim() });
+//     session.status     = "PAUSED";
+//     session.lastSeenAt = new Date();
+
+//     await session.save();
+//     return res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  IDLE — END (resume work)
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/idle/end", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       user:   req.user._id,
+//       status: { $in: ["PAUSED", "RUNNING"] },
+//     });
+
+//     if (!session) {
+//       return res.status(404).json({ error: "No active session found" });
+//     }
+
+//     const lastIdle = session.idleLogs.at(-1);
+
+//     if (!lastIdle || lastIdle.to) {
+//       return res.status(400).json({ error: "No active idle period to end" });
+//     }
+
+//     lastIdle.to = new Date();
+
+//     const idleMs         = Math.max(lastIdle.to - lastIdle.from, 0);
+//     session.totalIdleMs += idleMs;
+//     session.status       = "RUNNING";
+//     session.lastSeenAt   = new Date();
+
+//     await session.save();
+//     return res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  IDLE — MANUAL LOG (bulk insert, admin corrections)
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/idle", authUser, async (req, res) => {
+//   try {
+//     const { sessionId, from, to, reason } = req.body;
+
+//     if (!sessionId || !from || !to) {
+//       return res.status(400).json({ error: "sessionId, from, to are required" });
+//     }
+
+//     const session = await WorkSession.findOne({
+//       _id:  sessionId,
+//       user: req.user._id,
+//     });
+
+//     if (!session) return res.sendStatus(404);
+
+//     const idleMs         = Math.max(new Date(to) - new Date(from), 0);
+//     session.idleLogs.push({ from, to, reason: reason || "" });
+//     session.totalIdleMs += idleMs;
+
+//     await session.save();
+//     return res.sendStatus(200);
+//   } catch {
+//     res.sendStatus(500);
+//   }
+// });
+
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  MY SESSION — used by frontend on restore / mount
+// //
+// //  FIX: Always returns { session, idle } — never bare null.
+// //  When there is no active session, session is null and idle is false.
+// //  This lets the frontend safely do `data?.session` without crashing on
+// //  the top-level null that the old code returned.
+// // ═══════════════════════════════════════════════════════════════════════════
+// // router.get("/work/my", authUser, async (req, res) => {
+// //   try {
+// //     const session = await WorkSession.findOne({
+// //       user:   req.user._id,
+// //       status: { $in: ["RUNNING", "PAUSED"] },
+// //     });
+
+// //     if (!session) {
+// //       return res.json({ session: null, idle: false });
+// //     }
+// //     const lastIdle  = session.idleLogs.at(-1);
+// //     const idleActive = Boolean(lastIdle && !lastIdle.to);
+// //     return res.json({ session, idle: idleActive });
+// //   } catch (err) {
+// //     res.status(500).json({ error: err.message });
+// //   }
+// // });
+
+
+// router.get("/work/my", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       user: req.user._id,
+//       status: { $in: ["RUNNING", "PAUSED"] },
+//     });
+//     if (!session) return res.json(null);
+//     const lastIdle = session.idleLogs.at(-1);
 //     const idleActive = Boolean(lastIdle && !lastIdle.to);
+
 //     return res.json({ session, idle: idleActive });
 //   } catch (err) {
 //     res.status(500).json({ error: err.message });
 //   }
 // });
 
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  ADMIN — list all sessions
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.get("/work", auth, async (req, res) => {
+//   try {
+//     const sessions = await WorkSession.find()
+//       .populate({
+//         path:     "user",
+//         select:   "name role",
+//         populate: { path: "role", select: "name" },
+//       })
+//       .sort({ createdAt: -1 });
 
-router.get("/work/my", authUser, async (req, res) => {
-  try {
-    const session = await WorkSession.findOne({
-      user: req.user._id,
-      status: { $in: ["RUNNING", "PAUSED"] },
-    });
-    if (!session) return res.json(null);
-    const lastIdle = session.idleLogs.at(-1);
-    const idleActive = Boolean(lastIdle && !lastIdle.to);
+//     return res.json(sessions);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
-    return res.json({ session, idle: idleActive });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  ADMIN — cleanup dead sessions
+// //  Called from a cron job every 5 minutes.
+// //  FIX: Only stops RUNNING sessions — PAUSED sessions must never be auto-killed
+// //  because the user may simply be on a break.
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.post("/work/cleanup", auth, async (req, res) => {
+//   try {
+//     const now    = new Date();
+//     const cutoff = new Date(now - AUTO_STOP_LIMIT);
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  ADMIN — list all sessions
-// ═══════════════════════════════════════════════════════════════════════════
-router.get("/work", auth, async (req, res) => {
-  try {
-    const sessions = await WorkSession.find()
-      .populate({
-        path:     "user",
-        select:   "name role",
-        populate: { path: "role", select: "name" },
-      })
-      .sort({ createdAt: -1 });
+//     const deadSessions = await WorkSession.find({
+//       status:     "RUNNING", // ← PAUSED intentionally excluded
+//       lastSeenAt: { $lt: cutoff },
+//     });
 
-    return res.json(sessions);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+//     for (const session of deadSessions) {
+//       finaliseSession(session, now);
+//       await session.save();
+//     }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  ADMIN — cleanup dead sessions
-//  Called from a cron job every 5 minutes.
-//  FIX: Only stops RUNNING sessions — PAUSED sessions must never be auto-killed
-//  because the user may simply be on a break.
-// ═══════════════════════════════════════════════════════════════════════════
-router.post("/work/cleanup", auth, async (req, res) => {
-  try {
-    const now    = new Date();
-    const cutoff = new Date(now - AUTO_STOP_LIMIT);
+//     return res.json({ cleaned: deadSessions.length });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
-    const deadSessions = await WorkSession.find({
-      status:     "RUNNING", // ← PAUSED intentionally excluded
-      lastSeenAt: { $lt: cutoff },
-    });
+// // ═══════════════════════════════════════════════════════════════════════════
+// //  GET single session by id
+// // ═══════════════════════════════════════════════════════════════════════════
+// router.get("/work/:id", authUser, async (req, res) => {
+//   try {
+//     const session = await WorkSession.findOne({
+//       _id:  req.params.id,
+//       user: req.user._id,
+//     });
 
-    for (const session of deadSessions) {
-      finaliseSession(session, now);
-      await session.save();
-    }
+//     if (!session) return res.sendStatus(404);
 
-    return res.json({ cleaned: deadSessions.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+//     return res.json(session);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  GET single session by id
-// ═══════════════════════════════════════════════════════════════════════════
-router.get("/work/:id", authUser, async (req, res) => {
-  try {
-    const session = await WorkSession.findOne({
-      _id:  req.params.id,
-      user: req.user._id,
-    });
-
-    if (!session) return res.sendStatus(404);
-
-    return res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-module.exports = router;
+// module.exports = router;
