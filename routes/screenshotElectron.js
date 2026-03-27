@@ -223,11 +223,6 @@ const toUrl = (subfolder, filename) => `/uploads/${subfolder}/${filename}`;
 
 
 
-
-
-
-
-
 router.post(
   "/screenshot/save",
   authUser,

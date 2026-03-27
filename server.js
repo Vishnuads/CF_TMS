@@ -95,25 +95,25 @@ app.use("/api/electron",screenshotElectron)
 
 
  app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully! updated");
+  res.send("🚀 ETM API is running successfully! new");
 });
 
 
 
-app.get("/api/download", (req, res) => {
-  const filePath = path.join(
-    __dirname,
-    "files",
-    "EmployeeTracker Setup 1.0.0.exe"
-  );
+// app.get("/api/download", (req, res) => {
+//   const filePath = path.join(
+//     __dirname,
+//     "files",
+//     "EmployeeTracker Setup 1.0.0.exe"
+//   );
 
-  res.download(filePath, "EmployeeTracker.exe", (err) => {
-    if (err) {
-      console.error("Download error:", err);
-      res.sendStatus(500);
-    }
-  });
-});  
+//   res.download(filePath, "EmployeeTracker.exe", (err) => {
+//     if (err) {
+//       console.error("Download error:", err);
+//       res.sendStatus(500);
+//     }
+//   });
+// });  
 
 server.listen(PORT, (err) => {  
   if (err) {
