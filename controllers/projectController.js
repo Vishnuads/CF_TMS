@@ -1,6 +1,7 @@
 // controllers/projectController.js
 const Project = require("../models/Project");
 const socket = require("../socket");
+const Task = require("../models/Task");
 
 
 
@@ -86,11 +87,49 @@ exports.getProjects = async (req, res) => {
 };
 
 // DELETE PROJECT
+// exports.deleteProject = async (req, res) => {
+//   try {
+//     await Project.findByIdAndDelete(req.params.id);
+//         socket.getIO().emit("project-deleted", req.params.id);
+//     res.json({ message: "Project deleted successfully" });
+//   } catch (err) {
+//     res.status(404).json({ message: "Project not found" });
+//   }
+// };
+
+
+
 exports.deleteProject = async (req, res) => {
   try {
-    await Project.findByIdAndDelete(req.params.id);
-        socket.getIO().emit("project-deleted", req.params.id);
-    res.json({ message: "Project deleted successfully" });
+    const projectId = req.params.id;
+
+    // ✅ Find tasks before deleting (for socket emit)
+    const tasks = await Task.find({ project: projectId });
+
+    // ✅ Delete all tasks of this project
+    await Task.deleteMany({ project: projectId });
+
+    // ✅ Delete project
+    await Project.findByIdAndDelete(projectId);
+
+    const io = socket.getIO();
+
+    // ✅ Emit task delete events
+    tasks.forEach((task) => {
+      io.to(`project:${projectId}`).emit("task-deleted", task._id);
+
+      // 🔥 multiple users fix
+      if (Array.isArray(task.assigned_to)) {
+        task.assigned_to.forEach((userId) => {
+          io.to(`user:${userId}`).emit("task-deleted", task._id);
+        });
+      }
+    });
+ 
+    // ✅ Emit project delete
+    io.emit("project-deleted", projectId);
+
+    res.json({ message: "Project and related tasks deleted successfully" });
   } catch (err) {
     res.status(404).json({ message: "Project not found" });
   }

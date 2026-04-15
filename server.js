@@ -9,7 +9,7 @@ const morgan = require('morgan');
 dotenv.config();
 const PORT = process.env.PORT || 3000;
 // ✅ Database connection
-const database = require('./config/database');
+const database = require('./config/database');    
 database()
 const socket = require("./socket");
 const server = http.createServer(app);
@@ -32,7 +32,11 @@ const workSession = require("./routes/workSession")
 
 const screenshotElectron = require("./routes/screenshotElectron");
 
+// require("./middleware/taskReminderCron");
+
 const User = require("./models/User");
+
+
 
 // 🔥 AUTO PRESENCE CLEANUP (GLOBAL BACKGROUND JOB)
 setInterval(async () => {
@@ -56,14 +60,14 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 
-
+   
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 // app.use(express.json({ limit: "10mb" }));
 // app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ✅ Middleware   
+// ✅ Middleware      
 app.use(
   cors({
     origin: [
@@ -95,7 +99,7 @@ app.use("/api/electron",screenshotElectron)
 
 
  app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully! new-updated");
+  res.send("🚀 ETM API is running successfully!");
 });
 
 

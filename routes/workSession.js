@@ -415,7 +415,7 @@ router.post("/idle/start", authUser, async (req, res) => {
 
     const session = await WorkSession.findOne({
       user:   req.user._id,
-      status: "RUNNING",
+      status: "RUNNING",  
     });
 
     if (!session) {
