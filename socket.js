@@ -7,7 +7,7 @@ module.exports = {
   init: (server) => {
     io = new Server(server, {
       cors: {
-        // origin:process.env.CLIENT_URL,
+        // origin:process.env.CLIENT_URL, 
         origin: [
           "https://task.cinemafactoryacademy.com",
            "https://emptask.cinemafactoryacademy.com",
@@ -22,14 +22,57 @@ module.exports = {
       console.log("Socket connected:", socket.id);
 
       // 👤 USER ROOM
-      socket.on("join-user", async (userId) => {
-        socket.userId = userId;
-        socket.join(`user:${userId}`);
+      // socket.on("join-user", async (userId) => {
+      //   socket.userId = userId;
+      //   socket.join(`user:${userId}`);
 
-        await User.findByIdAndUpdate(userId, { isOnline: true });
-        io.emit("user-status-changed", { userId, isOnline: true });
+      //   await User.findByIdAndUpdate(userId, { isOnline: true });
+      //   io.emit("user-status-changed", { userId, isOnline: true });
+      // });
+
+
+      // socket.js (server) — replace disconnect handler
+const disconnectTimers = {};
+
+socket.on("disconnect", async () => {
+  if (!socket.userId) return;
+
+  // Wait 8 seconds before marking offline
+  // This handles tab close + quick reopen (mobile resume, refresh)
+  disconnectTimers[socket.userId] = setTimeout(async () => {
+    // Check if user reconnected on another socket
+    const rooms = io.sockets.adapter.rooms;
+    const userRoom = rooms.get(`user:${socket.userId}`);
+
+    if (!userRoom || userRoom.size === 0) {
+      await User.findByIdAndUpdate(socket.userId, {
+        isOnline: false,
+        lastSeen: new Date(),
       });
+      io.emit("user-status-changed", {
+        userId: socket.userId,
+        isOnline: false,
+      });
+    }
+  }, 8000); // 8 second grace period
 
+  console.log("Socket disconnected:", socket.id);
+});
+
+// Cancel the timer if user reconnects before it fires
+socket.on("join-user", async (userId) => {
+  // Clear any pending offline timer for this 
+  if (disconnectTimers[userId]) {
+    clearTimeout(disconnectTimers[userId]);
+    delete disconnectTimers[userId];
+  }
+
+  socket.userId = userId;
+  socket.join(`user:${userId}`);
+
+  await User.findByIdAndUpdate(userId, { isOnline: true });
+  io.emit("user-status-changed", { userId, isOnline: true });
+});
 
 
        socket.on("presence-ping", async (userId) => {
@@ -44,6 +87,12 @@ module.exports = {
     });
   });
 
+
+  // In your socket.js server — add inside io.on("connection", ...)
+socket.on("user-offline", async (userId) => {
+  await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
+  io.emit("user-status-changed", { userId, isOnline: false });
+});
 
   
       // 📌 TASK ROOM
@@ -78,17 +127,17 @@ module.exports = {
         });
       });
 
-      socket.on("disconnect", async () => {
-        if (!socket.userId) return;
+      // socket.on("disconnect", async () => {
+      //   if (!socket.userId) return;
 
-        await User.findByIdAndUpdate(socket.userId, { isOnline: false });
-        io.emit("user-status-changed", {
-          userId: socket.userId,
-          isOnline: false,
-        });
+      //   await User.findByIdAndUpdate(socket.userId, { isOnline: false });
+      //   io.emit("user-status-changed", {
+      //     userId: socket.userId,
+      //     isOnline: false,
+      //   });
 
-        console.log("Socket disconnected:", socket.id);
-      });
+      //   console.log("Socket disconnected:", socket.id);
+      // });
     });
 
     return io;

@@ -96,10 +96,10 @@ app.use("/api", screenshotRoutes);
 app.use("/api",workSession)
 app.use("/api/electron",screenshotElectron)
  
-
+  
 
  app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully!");
+  res.send("🚀 ETM API is running successfully! New");
 });
 
 
