@@ -89,7 +89,10 @@ const TaskSchema = new mongoose.Schema(
       enum: ["TODO", "IN_PROGRESS", "DONE"],
       default: "TODO",
     },
-
+    completedAt: {
+      type: Date,
+      default: null,
+    },
     priority: {
       type: String,
       enum: ["LOW", "MEDIUM", "HIGH"],

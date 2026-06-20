@@ -50,7 +50,7 @@ socket.on("disconnect", async () => {
         lastSeen: new Date(),
       });
       io.emit("user-status-changed", {
-        userId: socket.userId,
+        userId: socket.userId,  
         isOnline: false,
       });
     }
