@@ -535,9 +535,31 @@ router.get("/employee/:id", async (req, res) => {
       (t) => t.status === "IN_PROGRESS",
     ).length;
     const pending = allTasks.filter((t) => t.status === "TODO").length;
-    const overdue = allTasks.filter(
-      (t) => t.due_date && new Date(t.due_date) < now && t.status !== "DONE",
-    ).length;
+
+
+    
+    // const overdue = allTasks.filter(
+    //   (t) => t.due_date && new Date(t.due_date) < now && t.status !== "DONE",
+    // ).length;
+
+
+
+    const overdue = allTasks.filter((t) => {
+  if (!t.due_date) return false;
+
+  const dueDate = new Date(t.due_date);
+
+  // Completed late
+  if (t.status === "DONE" && t.completedAt) {
+    return new Date(t.completedAt) > dueDate;
+  }
+
+  // Pending and overdue
+  return t.status !== "DONE" && dueDate < now;
+}).length;
+
+
+
     const highPriority = allTasks.filter((t) => t.priority === "HIGH").length;
     const completionRate =
       total > 0 ? Math.round((completed / total) * 100) : 0;
