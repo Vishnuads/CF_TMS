@@ -102,7 +102,7 @@ app.use("/api/analytics", analyticsRouter);
   
 
  app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully! New");
+  res.send("🚀 ETM API is running successfully!");
 });
 
 
