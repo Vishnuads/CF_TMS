@@ -112,7 +112,7 @@ module.exports = {
 
         // 🔔 notify users (except sender)
         data.receivers?.forEach((id) => {
-          io.to(`user:${id}`).emit("notify-message", data); 
+          io.to(`user:${id}`).emit("notify-message", data);
         });
       });
     });
