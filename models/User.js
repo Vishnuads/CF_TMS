@@ -8,7 +8,7 @@ const UserSchema = new mongoose.Schema({
   type: mongoose.Schema.Types.ObjectId,
   ref: "Role"
 },
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: true }, 
 
    // ✅ ONLINE STATUS
     isOnline: { type: Boolean, default: false },

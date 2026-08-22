@@ -5,8 +5,18 @@ const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const Role = require("../models/Role")
+const Attendance = require("../models/Attendance");
+const socket = require("../socket");
+
+const { recordCheckIn, closeOpenSessionNow } = require("./attendanceCleanup");
 
 
+
+ function startOfDay(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
 
 // const transporter = nodemailer.createTransport({
 //   service: "gmail",
@@ -165,6 +175,95 @@ const mailOptions = {
 
 
 
+// exports.login = async (req, res) => {
+//   const { email, password } = req.body;
+
+//   const user = await User.findOne({ email }).populate("role");
+//   if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+//   if (!user.isActive) {
+//     return res.status(403).json({ message: "Account deactivated" });
+//   }
+
+//   const isMatch = await bcrypt.compare(password, user.password);
+//   if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+
+//   const token = jwt.sign(
+//     { id: user._id },
+//     process.env.JWT_SECRET
+//   );
+
+//   // ✅ SAVE SESSION
+// await Session.create({
+//   user: user._id,
+//   token,
+//   isValid: true
+// });
+
+
+
+
+//  // ✅ ATTENDANCE — record login (creates today's doc, or opens a new session)
+//   try {
+//     const today = startOfDay();
+//     let attendance = await Attendance.findOne({ user: user._id, date: today });
+
+//     if (!attendance) {
+//       attendance = await Attendance.create({
+//         user: user._id,
+//         date: today,
+//         loginTime: new Date(),
+//         sessions: [{ loginTime: new Date() }],
+//       });
+//     } else {
+//       attendance.sessions.push({ loginTime: new Date() });
+//       await attendance.save();
+//     }
+//   } catch (err) {
+//     console.error("Attendance login error:", err);
+//     // Don't block login if attendance recording fails
+//   }
+
+
+
+//     // ✅ SOCKET — notify admin panel of check-in, live
+//   try {
+//     const io = socket.getIO();
+//     io.to("admin").emit("attendance-checkin", {
+//       userId: user._id,
+//       name: user.name,
+//       loginTime: new Date(),
+//     });
+//     io.emit("attendance-checkin", {
+//       userId: user._id,
+//       name: user.name,
+//       loginTime: new Date(),
+//     });
+//   } catch (err) {
+//     console.error("Socket emit (checkin) failed:", err.message);
+//   }
+
+//   res.json({
+//     token,
+//     role: user.role.name,
+//     permissions: user.role.permissions, // 🔥 THIS FIXES EVERYTHING
+//     name: user.name,
+//     email: user.email,
+//     id:user._id
+//   });
+// };
+
+
+
+// exports.logout = async (req, res) => {
+//   await Session.updateOne({ token: req.token }, { isValid: false });
+//   res.json({ message: "Logged out" });
+// };
+
+
+
+
+
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -183,26 +282,218 @@ exports.login = async (req, res) => {
     process.env.JWT_SECRET
   );
 
-  // ✅ SAVE SESSION
-await Session.create({
-  user: user._id,
-  token,
-  isValid: true
-});
+  await Session.create({
+    user: user._id,
+    token,
+    isValid: true,
+  });
+
+
+    // ✅ ATTENDANCE — shared logic, same function the /checkin route uses
+  try {
+    await recordCheckIn(user._id, user.name);
+  } catch (err) {
+    console.error("Attendance login error:", err);
+  }
+
+
+  // const now = new Date();
+
+  // try {
+  //   const today = startOfDay(now);
+  //   let attendance = await Attendance.findOne({ user: user._id, date: today });
+
+  //   if (!attendance) {
+  //     attendance = await Attendance.create({
+  //       user: user._id,
+  //       date: today,
+  //       loginTime: now,
+  //       sessions: [{ loginTime: now }],
+  //     });
+  //   } else {
+  //     attendance.sessions.push({ loginTime: now });
+  //     await attendance.save();
+  //   }
+
+    
+  //   try {
+  //     const io = socket.getIO();
+  //     const payload = {
+  //       userId: user._id,
+  //       name: user.name,
+  //       loginTime: now,
+  //     };
+  //     io.to("admin").emit("attendance-checkin", payload);
+  //     io.emit("attendance-checkin", payload);
+  //   } catch (socketErr) {
+  //     console.error("Socket emit (checkin) failed:", socketErr.message);
+  //   }
+  // } catch (err) {
+  //   console.error("Attendance login error:", err);
+  // }
 
   res.json({
     token,
     role: user.role.name,
-    permissions: user.role.permissions, // 🔥 THIS FIXES EVERYTHING
+    permissions: user.role.permissions,
     name: user.name,
     email: user.email,
-    id:user._id
+    id: user._id,
   });
 };
 
 
 
+
+
+// exports.logout = async (req, res) => {
+//   await Session.updateOne({ token: req.token }, { isValid: false });
+
+//   try {
+//     const userId = req.user?._id || req.user?.id;
+
+//     if (userId) {
+//       const today = startOfDay();
+//       const attendance = await Attendance.findOne({ user: userId, date: today });
+
+//       if (attendance) {
+//         const now = new Date();
+//         let openSession = null;
+//         for (let i = attendance.sessions.length - 1; i >= 0; i--) {
+//           if (!attendance.sessions[i].logoutTime) {
+//             openSession = attendance.sessions[i];
+//             break;
+//           }
+//         }
+
+//         if (openSession) {
+//           const duration = Math.max(
+//             0,
+//             Math.floor((now - openSession.loginTime) / 1000)
+//           );
+//           openSession.logoutTime = now;
+//           openSession.duration = duration;
+//           attendance.totalDuration += duration;
+//         }
+
+//         attendance.logoutTime = now;
+//         await attendance.save();
+//         try {
+//           const io = socket.getIO();
+//           const payload = {
+//             userId,
+//             logoutTime: now,
+//             sessionDuration: openSession ? openSession.duration : 0,
+//             totalDuration: attendance.totalDuration,
+//           };
+//           io.to("admin").emit("attendance-checkout", payload);
+//           io.emit("attendance-checkout", payload);
+//         } catch (socketErr) {
+//           console.error("Socket emit (checkout) failed:", socketErr.message);
+//         }
+//       } else {
+//         console.warn(`Logout: no attendance doc found today for user ${userId}`);
+//       }
+//     }
+//   } catch (err) {
+//     console.error("Attendance logout error:", err);
+//   }
+
+//   res.json({ message: "Logged out" });
+// };
+
+
+
+
+
+
 exports.logout = async (req, res) => {
   await Session.updateOne({ token: req.token }, { isValid: false });
+
+  try {
+    const userId = req.user?._id || req.user?.id;
+    if (userId) {
+      await closeOpenSessionNow(userId, "manual");
+    }
+  } catch (err) {
+    console.error("Attendance logout error:", err);
+  }
+
   res.json({ message: "Logged out" });
 };
+
+
+
+
+// exports.logout = async (req, res) => {
+//   await Session.updateOne({ token: req.token }, { isValid: false });
+
+//   try {
+//     const userId = req.user?._id || req.user?.id;
+
+//     if (userId) {
+//       const today = startOfDay();
+//       const attendance = await Attendance.findOne({ user: userId, date: today });
+
+//       if (attendance) {
+//         const now = new Date();
+
+//         // Walk from the end to find the open session (guaranteed to reference
+//         // the live subdocument, not a copy)
+//         let openSession = null;
+//         for (let i = attendance.sessions.length - 1; i >= 0; i--) {
+//           if (!attendance.sessions[i].logoutTime) {
+//             openSession = attendance.sessions[i];
+//             break;
+//           }
+//         }
+
+//         if (openSession) {
+//           const duration = Math.max(
+//             0,
+//             Math.floor((now - openSession.loginTime) / 1000)
+//           );
+//           openSession.logoutTime = now;
+//           openSession.duration = duration;
+//           attendance.totalDuration += duration;
+//         }
+
+//         attendance.logoutTime = now;
+//         await attendance.save();
+//       }
+//     }
+//   } catch (err) {
+//     console.error("Attendance logout error:", err);
+//   }
+  
+
+//   res.json({ message: "Logged out" });
+// };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

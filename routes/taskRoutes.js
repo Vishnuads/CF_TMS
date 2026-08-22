@@ -8,15 +8,15 @@ const authTask = require("../middleware/chatAuth"); // JWT middleware
 
 
 // router.post(
-//   "/task",
+//   "/task",      
 //   upload.array("attachments", 10), 
-//   controller.createTask
+//   controller.createTask 
 // );
-
+  
 router.post("/task", auth, permission("tasks", "create"), (req, res, next) => {
   upload.array("attachments", 10)(req, res, function (err) {
     if (err) {
-      if (err.code === "LIMIT_FILE_SIZE") {
+      if (err.code === "LIMIT_FILE_SIZE") { 
         return res.status(400).json({
           message: "File size exceeds 50MB limit",
         });
@@ -49,6 +49,41 @@ router.get("/single/:taskId", controller.getSingleTask);
 
 router.patch("/task/:taskId/status", controller.updateTaskStatus);
 router.delete("/task", auth, permission("tasks", "create"), controller.deleteMultipleTasks);
+
+
+
+// new
+// ============================================================
+// START TASK TIMER
+// ============================================================
+
+router.patch(
+  "/task/:taskId/start",
+  auth,
+  controller.startTaskTimer
+);
+
+
+// ============================================================
+// STOP TASK TIMER
+// ============================================================
+
+router.patch(
+  "/task/:taskId/stop",
+  auth,
+  controller.stopTaskTimer
+);
+
+
+// ============================================================
+// GET TASK TIMER
+// ============================================================
+
+router.get(
+  "/task/:taskId/timer",
+  auth,
+  controller.getTaskTimer
+);
 
 
 

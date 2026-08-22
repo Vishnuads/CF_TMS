@@ -1,416 +1,645 @@
-  const Task = require("../models/Task");
-  const fs = require("fs");
-  const path = require("path");
-  const socket = require("../socket");
-    
-  // exports.createTask = async (req, res) => {
-  //   try {
-  //     const files = req.files || [];
+const Task = require("../models/Task");
+const fs = require("fs");
+const path = require("path");
+const socket = require("../socket");
 
-  //     const attachments = files.map((file) => ({
-  //       originalName: file.originalname,
-  //       fileName: file.filename,
-  //       fileType: file.mimetype,
-  //       fileSize: file.size,
-  //       fileUrl: `/uploads/tasks/${file.filename}`,
-  //     }));
+exports.createTask = async (req, res) => {
+  try {
+    const files = req.files || [];
 
-  //     let task = await Task.create({
-  //       ...req.body,
-  //       isRead: false,
-  //       attachments,
-  //     });
+    const attachments = files.map((file) => ({
+      originalName: file.originalname,
+      fileName: file.filename,
+      fileType: file.mimetype,
+      fileSize: file.size,
+      fileUrl: `/uploads/tasks/${file.filename}`,
+    }));
 
-  //   //socke.io start
+    // Normalise assigned_to → always an array of IDs
+    let assignedTo = req.body.assigned_to;
+    if (!assignedTo) {
+      assignedTo = [];
+    } else if (!Array.isArray(assignedTo)) {
+      assignedTo = [assignedTo];
+    }
 
-  //   task = await Task.findById(task._id)
-  //       .populate("assigned_to", "name email")
+    let task = await Task.create({
+      title: req.body.title,
+      description: req.body.description,
+      type: req.body.type,
+      status: req.body.status,
+      priority: req.body.priority,
+      start_date: req.body.start_date || null,
+      due_date: req.body.due_date || null,
+      project: req.body.project,
+      assigned_to: assignedTo,
+      isRead: false,
+      attachments,
+      assignedTime: Number(req.body.assignedTime) || 0, // 👈 added
+    });
 
-  //     // ✅ Correct populate syntax
-  //    const io = socket.getIO();
-  // if (task.assigned_to?._id) {
-  //   io.to(`user:${task.assigned_to._id}`).emit("task-created", task);
-  // }
-  // if (task.project?._id) {
-  //   io.to(`project:${task.project._id}`).emit("task-created", task);
-  // }
+    task = await Task.findById(task._id).populate("assigned_to", "name email");
 
-  //   //socket.io end
+    // ─── Socket.io ───────────────────────────────────────────────────────────
+    const io = socket.getIO();
 
-  //     res.status(201).json(task);
-  //   } catch (err) {
-  //     res.status(400).json({ message: err.message });
-  //   }
-  // };
+    task.assigned_to.forEach((user) => {
+      io.to(`user:${user._id}`).emit("task-created", task);
+    });
 
-      
-    
-  exports.createTask = async (req, res) => {
-    try {
-      const files = req.files || [];
+    if (task.project) {
+      io.to(`project:${task.project}`).emit("task-created", task);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
-      const attachments = files.map((file) => ({
-        originalName: file.originalname,
-        fileName: file.filename,
-        fileType: file.mimetype,
-        fileSize: file.size,
-        fileUrl: `/uploads/tasks/${file.filename}`,
-      }));
+    res.status(201).json(task);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
 
-      // Normalise assigned_to → always an array of IDs
-      let assignedTo = req.body.assigned_to;
-      if (!assignedTo) {
-        assignedTo = [];
-      } else if (!Array.isArray(assignedTo)) {
-        assignedTo = [assignedTo];
+exports.getTask = async (req, res) => {
+  try {
+    const tasks = await Task.find().sort({ createdAt: -1 });
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getSingleTask = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId)
+      .populate("assigned_to", "name email")
+      .populate("project");
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    res.json(task);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getTasksByProject = async (req, res) => {
+  try {
+    const tasks = await Task.find({ project: req.params.projectId })
+      .sort({ createdAt: -1 })
+      .populate("assigned_to", "name email");
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getUnreadTasks = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const tasks = await Task.find({
+      assigned_to: req.user._id,
+      isRead: false,
+    })
+      .populate("project", "name")
+      .sort({ createdAt: -1 });
+
+    res.json(tasks);
+  } catch (err) {
+    console.error("getUnreadTasks error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.markTaskRead = async (req, res) => {
+  const { taskId } = req.body;
+
+  await Task.findByIdAndUpdate(taskId, { isRead: true });
+
+  res.json({ success: true });
+};
+
+exports.updateTask = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    /* ── New files ──────────────────────────────────────────────────────── */
+    const files = req.files || [];
+    const newAttachments = files.map((file) => ({
+      originalName: file.originalname,
+      fileName: file.filename,
+      fileType: file.mimetype,
+      fileSize: file.size,
+      fileUrl: `/uploads/tasks/${file.filename}`,
+    }));
+
+    /* ── Existing files: remove deleted ones from disk ──────────────────── */
+    const keepIds = JSON.parse(req.body.existingAttachments || "[]");
+
+    const removedAttachments = task.attachments.filter(
+      (a) => !keepIds.includes(a._id.toString()),
+    );
+
+    removedAttachments.forEach((file) => {
+      const filePath = path.join(__dirname, "..", file.fileUrl);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
       }
+    });
 
-      let task = await Task.create({
-        title:       req.body.title,
-        description: req.body.description,
-        type:        req.body.type,
-        status:      req.body.status,
-        priority:    req.body.priority,
-        // ✅ Frontend sends full ISO strings, Mongoose Date accepts them directly
-        start_date:  req.body.start_date || null,
-        due_date:    req.body.due_date   || null,
-        project:     req.body.project,
-        assigned_to: assignedTo,
-        isRead:      false,
-        attachments,
-      });
+    /* ── Scalar fields ──────────────────────────────────────────────────── */
+    task.title = req.body.title;
+    task.description = req.body.description;
+    task.type = req.body.type;
+    task.status = req.body.status;
+    task.priority = req.body.priority;
 
-      task = await Task.findById(task._id).populate("assigned_to", "name email");
+    // ✅ Full ISO datetime strings from frontend → Mongoose Date
+    task.start_date = req.body.start_date || null;
+    task.due_date = req.body.due_date || null;
 
-      // ─── Socket.io ───────────────────────────────────────────────────────────
-      const io = socket.getIO();
+    task.assignedTime = Number(req.body.assignedTime) || 0;   // 👈 added
 
+    /* ── Multi-assignee ─────────────────────────────────────────────────── */
+    let assignedTo = req.body.assigned_to;
+    if (!assignedTo) {
+      assignedTo = [];
+    } else if (!Array.isArray(assignedTo)) {
+      assignedTo = [assignedTo];
+    }
+    task.assigned_to = assignedTo;
+
+    /* ── Final attachments ──────────────────────────────────────────────── */
+    task.attachments = [
+      ...task.attachments.filter((a) => keepIds.includes(a._id.toString())),
+      ...newAttachments,
+    ];
+
+    await task.save();
+
+    await task.populate("assigned_to", "name email");
+    await task.populate("project");
+
+    // ─── Socket.io ───────────────────────────────────────────────────────────
+    const io = socket.getIO();
+
+    io.to(`project:${task.project._id}`).emit("task-updated", task);
+
+    task.assigned_to.forEach((user) => {
+      io.to(`user:${user._id}`).emit("task-updated", task);
+    });
+    // ─────────────────────────────────────────────────────────────────────────
+
+    res.json(task);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// exports.updateTaskStatus = async (req, res) => {
+//   try {
+
+//         const updateData = {
+//       status: req.body.status,
+//     };
+
+//     // When task becomes DONE
+//     if (req.body.status === "DONE") {
+//       updateData.completedAt = new Date();
+//     }
+
+//     // If reopened, clear completedAt
+//     if (req.body.status !== "DONE") {
+//       updateData.completedAt = null;
+//     }
+
+//     const task = await Task.findByIdAndUpdate(
+//       req.params.taskId,
+//       // { status: req.body.status },
+//       updateData,
+//       { new: true },
+//     ).populate("assigned_to", "name email");
+
+//     //socket.io start
+
+//     // 2️⃣ Emit socket event
+//     const io = socket.getIO();
+
+//     // 🔥 Project room
+//     if (task.project?._id) {
+//       io.to(`project:${task.project._id}`).emit("task-status-updated", task);
+//     }
+
+//     // 🔔 Assigned user
+//     if (task.assigned_to?._id) {
+//       io.to(`user:${task.assigned_to._id}`).emit("task-status-updated", task);
+//     }
+
+//     // (Optional) global
+//     io.emit("task-status-updated", task);
+
+//     //socket.io end
+
+//     res.json(task);
+//   } catch (err) {
+//     res.status(400).json({ message: err.message });
+//   }
+// };
+
+
+
+
+
+
+
+
+
+
+// exports.updateTaskStatus = async (req, res) => {
+//   try {
+//     const updateData = {
+//       status: req.body.status,
+//     };
+
+//     // When task becomes DONE
+//     if (req.body.status === "DONE") {
+//       updateData.completedAt = new Date();
+//     }
+
+//     // If reopened
+//     if (req.body.status !== "DONE") {
+//       updateData.completedAt = null;
+//     }
+
+//     const task = await Task.findByIdAndUpdate(req.params.taskId, updateData, {
+//       new: true,
+//       runValidators: true,
+//     })
+//       .populate("assigned_to", "name email")
+//       .populate("project");
+
+//     if (!task) {
+//       return res.status(404).json({
+//         message: "Task not found",
+//       });
+//     }
+
+//     const io = socket.getIO();
+
+//     // Project room
+//     if (task.project?._id) {
+//       io.to(`project:${task.project._id}`).emit("task-status-updated", task);
+//     }
+
+//     // Multiple assigned users
+//     if (Array.isArray(task.assigned_to)) {
+//       task.assigned_to.forEach((user) => {
+//         io.to(`user:${user._id}`).emit("task-status-updated", task);
+//       });
+//     }
+
+//     // Global
+//     io.emit("task-status-updated", task);
+
+//     res.json(task);
+//   } catch (err) {
+//     console.error("Update Status Error:", err);
+
+//     res.status(400).json({
+//       message: err.message,
+//     });
+//   }
+// };
+
+
+
+
+
+
+
+
+exports.updateTaskStatus = async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId);
+
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
+
+    const newStatus = req.body.status;
+    const now = new Date();
+
+    task.status = newStatus;
+    task.completedAt = newStatus === "DONE" ? now : null;
+
+    const io = socket.getIO();
+    let timerEvent = null; // "task-timer-started" | "task-timer-stopped" | null
+
+    // ── Timer side-effects tied to status ──────────────────────────────
+    if (newStatus === "IN_PROGRESS") {
+      if (!task.timerRunning) {
+        task.timerRunning = true;
+        task.timerStartedAt = now;
+        timerEvent = "task-timer-started";
+      }
+    } else {
+      if (task.timerRunning && task.timerStartedAt) {
+        const sessionDuration = Math.max(
+          0,
+          Math.floor((now.getTime() - task.timerStartedAt.getTime()) / 1000)
+        );
+
+        task.totalTimeSpent += sessionDuration;
+
+        task.timeSessions.push({
+          startedAt: task.timerStartedAt,
+          stoppedAt: now,
+          duration: sessionDuration,
+        });
+
+        task.timerRunning = false;
+        task.timerStartedAt = null;
+        timerEvent = "task-timer-stopped";
+      }
+    }
+
+    await task.save();
+
+    await task.populate("assigned_to", "name email");
+    await task.populate("project");
+
+    // ── Status update — everyone watching this task/project ────────────
+    if (task.project?._id) {
+      io.to(`project:${task.project._id}`).emit("task-status-updated", task);
+    }
+    if (Array.isArray(task.assigned_to)) {
       task.assigned_to.forEach((user) => {
-        io.to(`user:${user._id}`).emit("task-created", task);
+        io.to(`user:${user._id}`).emit("task-status-updated", task);
       });
+    }
+    io.emit("task-status-updated", task);
 
-      if (task.project) {
-        io.to(`project:${task.project}`).emit("task-created", task);
+    // ── Timer-specific event — so dashboards that listen only for   ────
+    // ── timer events (like startTaskTimer/stopTaskTimer do) catch it ───
+    if (timerEvent) {
+      io.emit(timerEvent, task); // global, so any admin dashboard picks it up
+      if (task.project?._id) {
+        io.to(`project:${task.project._id}`).emit(timerEvent, task);
       }
-      // ─────────────────────────────────────────────────────────────────────────
-
-      res.status(201).json(task);
-    } catch (err) {
-      res.status(400).json({ message: err.message });
-    }
-  };
-
-
-
-
-  exports.getTask = async (req, res) => {
-    try {
-      const tasks = await Task.find().sort({ createdAt: -1 });
-      res.json(tasks);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  };
-
-  exports.getSingleTask = async (req, res) => {
-    try {
-      const task = await Task.findById(req.params.taskId)
-        .populate("assigned_to", "name email")
-        .populate("project");
-
-      if (!task) {
-        return res.status(404).json({ message: "Task not found" });
+      if (Array.isArray(task.assigned_to)) {
+        task.assigned_to.forEach((user) => {
+          io.to(`user:${user._id}`).emit(timerEvent, task);
+        });
       }
-
-      res.json(task);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
     }
-  };
 
-  exports.getTasksByProject = async (req, res) => {
-    try {
-      const tasks = await Task.find({ project: req.params.projectId })
-        .sort({ createdAt: -1 })
-        .populate("assigned_to", "name email");
-      res.json(tasks);
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  };
+    res.json(task);
+  } catch (err) {
+    console.error("Update Status Error:", err);
+    res.status(400).json({ message: err.message });
+  }
+};
 
-  exports.getUnreadTasks = async (req, res) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ message: "Unauthorized" });
+exports.deleteMultipleTasks = async (req, res) => {
+  try {
+    const { taskIds } = req.body;
+
+    const tasks = await Task.find({ _id: { $in: taskIds } });
+
+    await Task.deleteMany({ _id: { $in: taskIds } });
+
+    const io = socket.getIO();
+
+    tasks.forEach((task) => {
+      io.to(`project:${task.project}`).emit("task-deleted", task._id);
+      // if (task.assigned_to) {
+      //   io.to(`user:${task.assigned_to}`).emit("task-deleted", task._id);
+      // }
+
+      // ✅ multiple assignees
+      if (Array.isArray(task.assigned_to)) {
+        task.assigned_to.forEach((userId) => {
+          io.to(`user:${userId}`).emit("task-deleted", task._id);
+        });
       }
+    });
 
-      const tasks = await Task.find({
-        assigned_to: req.user._id,
-        isRead: false,
-      })
-        .populate("project", "name")
-        .sort({ createdAt: -1 });
+    res.json({ message: "Tasks deleted" });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
 
-      res.json(tasks);
-    } catch (err) {
-      console.error("getUnreadTasks error:", err);
-      res.status(500).json({ message: "Server error" });
+// ============================================================
+// START TASK TIMER
+// ============================================================
+
+exports.startTaskTimer = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
     }
-  };
 
-  exports.markTaskRead = async (req, res) => {
-    const { taskId } = req.body;
+    // Already running
+    if (task.timerRunning) {
+      return res.status(400).json({
+        message: "Task timer is already running",
+        task,
+      });
+    }
 
-    await Task.findByIdAndUpdate(taskId, { isRead: true });
+    const now = new Date();
 
-    res.json({ success: true });
-  };
+    task.timerRunning = true;
+    task.timerStartedAt = now;
 
-  // exports.updateTask = async (req, res) => {
-  //   try {
-  //     const task = await Task.findById(req.params.taskId);
-  //     if (!task) {
-  //       return res.status(404).json({ message: "Task not found" });
-  //     }
+    // Automatically move TODO -> IN_PROGRESS
+    if (task.status === "TODO") {
+      task.status = "IN_PROGRESS";
+    }
 
-  //     /* -------------------- NEW FILES -------------------- */
-  //     const files = req.files || [];
-  //     const newAttachments = files.map((file) => ({
-  //       originalName: file.originalname,
-  //       fileName: file.filename,
-  //       fileType: file.mimetype,
-  //       fileSize: file.size,
-  //       fileUrl: `/uploads/tasks/${file.filename}`,
-  //     }));
+    await task.save();
 
-  //     /* -------------------- EXISTING FILES -------------------- */
-  //     const keepIds = JSON.parse(req.body.existingAttachments || "[]");
+    // Populate data
+    await task.populate("assigned_to", "name email");
+    await task.populate("project");
 
-  //     // files to delete
-  //     const removedAttachments = task.attachments.filter(
-  //       (a) => !keepIds.includes(a._id.toString())
-  //     );
+    // Socket
+    const io = socket.getIO();
 
-  //     // delete from disk
-  //     removedAttachments.forEach((file) => {
-  //       const filePath = path.join(
-  //         __dirname,
-  //         "..",
-  //         file.fileUrl
-  //       );
+    if (task.project?._id) {
+      io.to(`project:${task.project._id}`).emit("task-timer-started", task);
+    }
 
-  //       if (fs.existsSync(filePath)) {
-  //         fs.unlinkSync(filePath);
-  //       }
-  //     });
+    if (Array.isArray(task.assigned_to)) {
+      task.assigned_to.forEach((user) => {
+        io.to(`user:${user._id}`).emit("task-timer-started", task);
+      });
+    }
 
-  //     /* -------------------- UPDATE FIELDS -------------------- */
-  //     task.title = req.body.title;
-  //     task.description = req.body.description;
-  //     task.type = req.body.type;
-  //     task.status = req.body.status;
-  //     task.priority = req.body.priority;
-  //     task.due_date = req.body.due_date || null;
-  //     task.assigned_to = req.body.assigned_to || null;
+    res.status(200).json({
+      message: "Task timer started",
+      task,
+    });
+  } catch (err) {
+    console.error("Start Timer Error:", err);
 
-  //     /* -------------------- FINAL ATTACHMENTS -------------------- */
-  //     task.attachments = [
-  //       ...task.attachments.filter((a) =>
-  //         keepIds.includes(a._id.toString())
-  //       ),
-  //       ...newAttachments,
-  //     ];
+    res.status(500).json({
+      message: "Failed to start task timer",
+      error: err.message,
+    });
+  }
+};
 
-  //     await task.save();
+// ============================================================
+// STOP TASK TIMER
+// ============================================================
 
-  //     await task.populate("assigned_to", "name email");
+exports.stopTaskTimer = async (req, res) => {
+  try {
+    const { taskId } = req.params;
 
-  //     //socket.io start
+    const task = await Task.findById(taskId);
 
-  //        await task.populate("project");
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
 
-  //          const io = socket.getIO();
+    // Timer is not running
+    if (!task.timerRunning || !task.timerStartedAt) {
+      return res.status(400).json({
+        message: "Task timer is not running",
+        task,
+      });
+    }
 
-  //     io.to(`project:${task.project._id}`).emit("task-updated", task);
+    const now = new Date();
 
-  //     if (task.assigned_to) {
-  //       io.to(`user:${task.assigned_to._id}`).emit("task-updated", task);
-  //     }
+    // Calculate current session duration
+    const sessionDuration = Math.max(
+      0,
+      Math.floor((now.getTime() - task.timerStartedAt.getTime()) / 1000),
+    );
 
-  //     //socket.io end
+    // Add current session to total time
+    task.totalTimeSpent += sessionDuration;
 
-  //     res.json(task);
-  //   } catch (err) {
-  //     console.error(err);
-  //     res.status(400).json({ message: err.message });
-  //   }
-  // };
+    // Save session history
+    task.timeSessions.push({
+      startedAt: task.timerStartedAt,
+      stoppedAt: now,
+      duration: sessionDuration,
+    });
 
+    // Reset current timer
+    task.timerRunning = false;
+    task.timerStartedAt = null;
 
+    await task.save();
 
+    await task.populate("assigned_to", "name email");
+    await task.populate("project");
 
-  exports.updateTask = async (req, res) => {
-    try {
-      const task = await Task.findById(req.params.taskId);
-      if (!task) {
-        return res.status(404).json({ message: "Task not found" });
-      }
+    // Socket
+    const io = socket.getIO(); 
 
-      /* ── New files ──────────────────────────────────────────────────────── */
-      const files = req.files || [];
-      const newAttachments = files.map((file) => ({
-        originalName: file.originalname,
-        fileName: file.filename,
-        fileType: file.mimetype,
-        fileSize: file.size,
-        fileUrl: `/uploads/tasks/${file.filename}`,
-      }));
+    if (task.project?._id) {
+      io.to(`project:${task.project._id}`).emit("task-timer-stopped", task);
+    }
 
-      /* ── Existing files: remove deleted ones from disk ──────────────────── */
-      const keepIds = JSON.parse(req.body.existingAttachments || "[]");
+    if (Array.isArray(task.assigned_to)) {
+      task.assigned_to.forEach((user) => {
+        io.to(`user:${user._id}`).emit("task-timer-stopped", task);
+      });
+    }
 
-      const removedAttachments = task.attachments.filter(
-        (a) => !keepIds.includes(a._id.toString())
+    res.status(200).json({
+      message: "Task timer stopped",
+      sessionDuration,
+      totalTimeSpent: task.totalTimeSpent,
+      task,
+    });
+  } catch (err) {
+    console.error("Stop Timer Error:", err);
+
+    res.status(500).json({
+      message: "Failed to stop task timer",
+      error: err.message,
+    });
+  }
+};
+
+// ============================================================
+// GET TASK TIMER
+// ============================================================
+
+exports.getTaskTimer = async (req, res) => {
+  try {
+    const { taskId } = req.params;
+
+    const task = await Task.findById(taskId).select(
+      "title timerRunning timerStartedAt totalTimeSpent timeSessions",
+    );
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
+
+    let currentSessionTime = 0;
+    let totalCurrentTime = task.totalTimeSpent;
+
+    // If currently running, calculate live elapsed time
+    if (task.timerRunning && task.timerStartedAt) {
+      currentSessionTime = Math.max(
+        0,
+        Math.floor((Date.now() - task.timerStartedAt.getTime()) / 1000),
       );
 
-      removedAttachments.forEach((file) => {
-        const filePath = path.join(__dirname, "..", file.fileUrl);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      });
-
-      /* ── Scalar fields ──────────────────────────────────────────────────── */
-      task.title       = req.body.title;
-      task.description = req.body.description;
-      task.type        = req.body.type;
-      task.status      = req.body.status;
-      task.priority    = req.body.priority;
-
-      // ✅ Full ISO datetime strings from frontend → Mongoose Date
-      task.start_date  = req.body.start_date || null;
-      task.due_date    = req.body.due_date   || null;
-
-      /* ── Multi-assignee ─────────────────────────────────────────────────── */
-      let assignedTo = req.body.assigned_to;
-      if (!assignedTo) {
-        assignedTo = [];
-      } else if (!Array.isArray(assignedTo)) {
-        assignedTo = [assignedTo];
-      }
-      task.assigned_to = assignedTo;
-
-      /* ── Final attachments ──────────────────────────────────────────────── */
-      task.attachments = [
-        ...task.attachments.filter((a) => keepIds.includes(a._id.toString())),
-        ...newAttachments,
-      ];
-
-      await task.save();
-
-      await task.populate("assigned_to", "name email");
-      await task.populate("project");
-
-      // ─── Socket.io ───────────────────────────────────────────────────────────
-      const io = socket.getIO();
-
-      io.to(`project:${task.project._id}`).emit("task-updated", task);
-
-      task.assigned_to.forEach((user) => {
-        io.to(`user:${user._id}`).emit("task-updated", task);
-      });
-      // ─────────────────────────────────────────────────────────────────────────
-
-      res.json(task);
-    } catch (err) {
-      console.error(err);
-      res.status(400).json({ message: err.message });
+      totalCurrentTime = task.totalTimeSpent + currentSessionTime;
     }
-  };
 
+    res.json({
+      taskId: task._id,
+      title: task.title,
 
+      timerRunning: task.timerRunning,
 
-  exports.updateTaskStatus = async (req, res) => {
-    try {
+      timerStartedAt: task.timerStartedAt,
 
+      // Completed/stopped sessions
+      totalTimeSpent: task.totalTimeSpent,
 
-          const updateData = {
-        status: req.body.status,
-      };
+      // Current running session
+      currentSessionTime,
 
-      // When task becomes DONE
-      if (req.body.status === "DONE") {
-        updateData.completedAt = new Date();
-      }
+      // Total including current running session
+      currentTotalTime: totalCurrentTime,
 
-      // If reopened, clear completedAt
-      if (req.body.status !== "DONE") {
-        updateData.completedAt = null;
-      }
+      timeSessions: task.timeSessions,
+    });
+  } catch (err) {
+    console.error("Get Timer Error:", err);
 
-
-
-      const task = await Task.findByIdAndUpdate(
-        req.params.taskId,
-        // { status: req.body.status },
-        updateData,
-        { new: true },
-      ).populate("assigned_to", "name email");
-
-      //socket.io start
-
-      // 2️⃣ Emit socket event
-      const io = socket.getIO();
-
-      // 🔥 Project room
-      if (task.project?._id) {
-        io.to(`project:${task.project._id}`).emit("task-status-updated", task);
-      }
-
-      // 🔔 Assigned user
-      if (task.assigned_to?._id) {
-        io.to(`user:${task.assigned_to._id}`).emit("task-status-updated", task);
-      }
-
-      // (Optional) global
-      io.emit("task-status-updated", task);
-
-      //socket.io end
-
-      res.json(task);
-    } catch (err) {
-      res.status(400).json({ message: err.message });
-    }
-  };
-
-  exports.deleteMultipleTasks = async (req, res) => {
-    try {
-      const { taskIds } = req.body;
-
-      const tasks = await Task.find({ _id: { $in: taskIds } });
-
-      await Task.deleteMany({ _id: { $in: taskIds } });
-
-      const io = socket.getIO();
-
-      tasks.forEach((task) => {
-        io.to(`project:${task.project}`).emit("task-deleted", task._id);
-        // if (task.assigned_to) {
-        //   io.to(`user:${task.assigned_to}`).emit("task-deleted", task._id);
-        // }
-
-        // ✅ multiple assignees
-        if (Array.isArray(task.assigned_to)) {
-          task.assigned_to.forEach((userId) => {
-            io.to(`user:${userId}`).emit("task-deleted", task._id);
-          });
-        }
-        
-      });
-
-      res.json({ message: "Tasks deleted" });
-    } catch (err) {
-      res.status(400).json({ message: err.message });
-    }
-  };
+    res.status(500).json({
+      message: "Failed to get task timer",
+      error: err.message,
+    });
+  }
+};
