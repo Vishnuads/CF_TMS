@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
 const Task = require("../models/Task");
+const { getEmployeeProductivity } = require("../controllers/productivity.controller");
+const { auth, adminOnly } = require("../middleware/auth.middleware");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -351,7 +353,7 @@ router.get("/employee/:id", async (req, res) => {
     // ─── Recent tasks (last 10, enriched with completionDays) ────────────────
     const recentTasks = [...allTasks]
       .sort((a, b) => new Date(b.start_date) - new Date(a.start_date)) // newest start_date first
-      .slice(0, 10)
+      // .slice(0, 10)
       .map((task) => {
         let completionDays = null;
         if (task.status === "DONE" && task.start_date && task.completedAt) {
@@ -419,6 +421,9 @@ router.get("/employee/:id", async (req, res) => {
 
 
 
+
+
+router.get("/employee/:userId/productivity", auth, adminOnly, getEmployeeProductivity);
 
 
 
