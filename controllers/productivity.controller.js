@@ -346,6 +346,7 @@ const User = require("../models/User");
 const {
   computeProductivityScore,
   closedSessionSeconds,
+  isOnTimeLogin, 
 } = require("../services/productivityScore.service");
 
 // ============================================================
@@ -562,34 +563,76 @@ exports.getEmployeeProductivity = async (req, res) => {
     // ATTENDANCE TABLE
     // ========================================================
 
-    const attendance = result.raw.attendance.map((record) => {
-      const sessions = Array.isArray(record.sessions)
-        ? [...record.sessions]
-        : [];
+    // const attendance = result.raw.attendance.map((record) => {
+    //   const sessions = Array.isArray(record.sessions)
+    //     ? [...record.sessions]
+    //     : [];
 
-      sessions.sort(
-        (a, b) => new Date(a.loginTime) - new Date(b.loginTime),
-      );
+    //   sessions.sort(
+    //     (a, b) => new Date(a.loginTime) - new Date(b.loginTime),
+    //   );
 
-      const first = sessions[0];
-      const firstCheckIn = first?.loginTime || null;
+    //   const first = sessions[0];
+    //   const firstCheckIn = first?.loginTime || null;
 
-      const onTimeArrival = firstCheckIn
-        ? new Date(firstCheckIn).getHours() < 10
-        : false;
+    //   const onTimeArrival = firstCheckIn
+    //     ? new Date(firstCheckIn).getHours() < 10
+    //     : false;
 
-      const totalDuration = closedSessionSeconds(record);
+    //   const totalDuration = closedSessionSeconds(record);
 
-      return {
-        _id: record._id,
-        date: record.date,
-        firstCheckIn,
-        onTimeArrival,
-        totalDuration,
-        totalDurationLabel: fmtDuration(totalDuration),
-        sessionCount: sessions.length,
-      };
-    });
+    //   return {
+    //     _id: record._id,
+    //     date: record.date,
+    //     firstCheckIn,
+    //     onTimeArrival,
+    //     totalDuration,
+    //     totalDurationLabel: fmtDuration(totalDuration),
+    //     sessionCount: sessions.length,
+    //   };
+    // });
+
+
+
+
+
+
+
+
+    // ========================================================
+// ATTENDANCE TABLE
+// ========================================================
+
+const attendance = result.raw.attendance.map((record) => {
+  const sessions = Array.isArray(record.sessions)
+    ? [...record.sessions]
+    : [];
+
+  sessions.sort(
+    (a, b) => new Date(a.loginTime) - new Date(b.loginTime),
+  );
+
+  const first = sessions[0];
+  const firstCheckIn = first?.loginTime || null;
+
+  // Before 10:00 AM = on time, 10:00 AM or later = late
+  const onTimeArrival = firstCheckIn
+    ? isOnTimeLogin(firstCheckIn)
+    : false;
+
+  const totalDuration = closedSessionSeconds(record);
+
+  return {
+    _id: record._id,
+    date: record.date,
+    firstCheckIn,
+    onTimeArrival,
+    totalDuration,
+    totalDurationLabel: fmtDuration(totalDuration),
+    sessionCount: sessions.length,
+  };
+});
+
 
     // ========================================================
     // TASK TABLE
