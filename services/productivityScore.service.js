@@ -890,9 +890,12 @@ function attendanceSeconds(record, { live = true } = {}) {
     // data, or a session created before this field existed), fall
     // back to `now` as before.
     const loginTime = new Date(session.loginTime);
-    const referencePoint = session.lastSeenAt
-      ? new Date(session.lastSeenAt)
-      : now;
+    const rawReference = session.lastSeenAt ? new Date(session.lastSeenAt) : now;
+    // Guard against a missing/malformed lastSeenAt (older records,
+    // or a session created before this field existed) producing an
+    // Invalid Date, which would silently turn every downstream number
+    // into NaN instead of throwing an obvious error.
+    const referencePoint = Number.isNaN(rawReference.getTime()) ? now : rawReference;
     const cappedReference = referencePoint > now ? now : referencePoint;
 
     const elapsed = Math.max(
@@ -1348,4 +1351,4 @@ module.exports = {
   STANDARD_BANDS,
   HOURS_BANDS,
   PRODUCTIVITY_BANDS,
-}; 
+};
