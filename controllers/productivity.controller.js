@@ -6,6 +6,7 @@ const User = require("../models/User");
 
 const {
   computeProductivityScore,
+  attendanceSeconds,
   closedSessionSeconds,
   isOnTimeLogin, // timezone-safe (IST) on-time/late check — shared with the score service
 } = require("../services/productivityScore.service");

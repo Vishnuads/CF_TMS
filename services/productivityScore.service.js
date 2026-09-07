@@ -1607,18 +1607,13 @@ async function computeProductivityScore(
   // 4. LOGIN HOURS
   // ==========================================================
 
-  const totalLoggedSeconds =
-    attendance.reduce(
-      (sum, record) =>
-        sum +
-        attendanceSeconds(
-          record,
-          {
-            live: true,
-          }
-        ),
-      0
-    );
+ const totalLoggedSeconds = attendance.reduce(
+  (sum, record) => {
+    const seconds = attendanceSeconds(record, { live: true });
+    return sum + seconds;
+  },
+  0
+);
 
   const workingDays =
     countWorkingDays(
