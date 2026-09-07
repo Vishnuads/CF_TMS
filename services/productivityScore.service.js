@@ -9,9 +9,20 @@
 // // Office hours: 9:30 AM – 6:30 PM = 9 hours standard workday
 // const STANDARD_WORKDAY_HOURS = 9;
 
-// // Before 10:00 AM (India Standard Time) = on time
-// // 10:00 AM IST or later = late 
+// // Before 10:00 AM = on time
+// // 10:00 AM or later = late
 // const SCHEDULE_CUTOFF_HOUR = 10;
+
+
+
+
+
+
+
+
+
+
+
 
 // // One late login per month is forgiven — it does not count against
 // // Schedule Adherence. A second (or later) late day in the same period
@@ -39,63 +50,6 @@
 // // Combined weight pool shared between the HIGH bucket and the
 // // LOW+MEDIUM bucket — always 25% total, however it gets split.
 // const ON_TIME_POOL_WEIGHT = WEIGHTS.priorityOnTime + WEIGHTS.onTime;
-
-// // ============================================================
-// // TIMEZONE-SAFE IST HOUR EXTRACTION
-// // ============================================================
-// //
-// // THE BUG THIS FIXES:
-// // `date.getHours()` returns the hour according to the SERVER'S OS
-// // timezone (process.env.TZ), not the business timezone. Most hosting
-// // environments (Docker containers, many cloud VMs) default to UTC.
-// // If a login actually happened at 10:18 AM IST, the underlying
-// // instant stored in Mongo is the equivalent UTC instant, roughly
-// // 04:48 UTC (IST is UTC+5:30). Calling `.getHours()` on a server
-// // running in UTC returns `4`, which is `< 10`, so the login was
-// // being marked "on time" even though it was 18 minutes late in real
-// // wall-clock (IST) time. The frontend looked "wrong" because it
-// // displays time correctly (browser is in IST via
-// // `toLocaleTimeString("en-IN", ...)`), while the backend's
-// // determination of on-time/late silently used a different timezone.
-// //
-// // THE FIX:
-// // Never rely on the host's local timezone. Convert the absolute
-// // instant (which `Date#getTime()` always gives correctly, regardless
-// // of host TZ) into India Standard Time wall-clock components
-// // ourselves, by adding the fixed IST offset (UTC+5:30) and reading
-// // back with the UTC getters. This gives the correct IST hour/minute
-// // no matter what timezone the Node process itself is running in.
-// // ============================================================
-
-// const IST_OFFSET_MINUTES = 5 * 60 + 30; // India Standard Time = UTC+5:30
-// const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
-
-// function getISTHourMinute(date) {
-//   const d = new Date(date);
-//   // `d.getTime()` is an absolute, timezone-independent epoch value.
-//   // Shifting it by the IST offset and reading it back with the UTC
-//   // getters yields IST wall-clock time regardless of the server's
-//   // own configured timezone.
-//   const istShifted = new Date(d.getTime() + IST_OFFSET_MS);
-//   return {
-//     hours: istShifted.getUTCHours(),
-//     minutes: istShifted.getUTCMinutes(),
-//   };
-// }
-
-// /**
-//  * Returns true if the login happened strictly BEFORE 10:00:00 AM IST
-//  * (on time), false if it happened AT or AFTER 10:00:00 AM IST (late).
-//  * This is timezone-safe: it does not depend on the server process's
-//  * local timezone setting.
-//  */
-// function isOnTimeLogin(loginTime) {
-//   if (!loginTime) return false;
-//   const { hours } = getISTHourMinute(loginTime);
-//   // hours < 10  -> definitely before 10:00 AM IST, regardless of minute
-//   // hours >= 10 -> 10:00:00 AM IST or later
-//   return hours < SCHEDULE_CUTOFF_HOUR;
-// }
 
 // // ============================================================
 // // DATE HELPERS
@@ -448,10 +402,6 @@
 
 //   // ==========================================================
 //   // 5. SCHEDULE ADHERENCE % — WITH 1 LATE-LOGIN GRACE DAY/PERIOD
-//   //
-//   // Uses `isOnTimeLogin()`, which compares against 10:00 AM IST in a
-//   // timezone-safe way (see the block above) instead of the server's
-//   // local `.getHours()`.
 //   // ==========================================================
 
 //   const presentDays = attendance.filter(
@@ -464,9 +414,8 @@
 //     );
 //     const firstSession = sortedSessions[0];
 //     if (!firstSession?.loginTime) return false;
-
-//     // Before 10:00 AM IST = on time, 10:00 AM IST or later = late
-//     return isOnTimeLogin(firstSession.loginTime);
+//     const loginTime = new Date(firstSession.loginTime);
+//     return loginTime.getHours() < SCHEDULE_CUTOFF_HOUR;
 //   });
 
 //   const lateLoginDaysCount = presentDays.length - onTimeLoginDays.length;
@@ -673,13 +622,11 @@
 //   monthRange,
 //   countWorkingDays,
 //   isSameLocalDay,
-//   isOnTimeLogin,
-//   getISTHourMinute,
 
 //   WEIGHTS,
 //   ON_TIME_POOL_WEIGHT,
 //   STANDARD_WORKDAY_HOURS,
-//   LATE_LOGIN_GRACE_DAYS_PER_MONTH,  
+//   LATE_LOGIN_GRACE_DAYS_PER_MONTH,
 //   MAX_LIVE_SESSION_SECONDS,
 
 //   STANDARD_BANDS,
@@ -703,9 +650,18 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
 const Attendance = require("../models/Attendance");
 const Task = require("../models/Task");
-const { isOnTimeArrival } = require("../utils/timezone");
 
 // ============================================================
 // CONFIG
@@ -714,8 +670,8 @@ const { isOnTimeArrival } = require("../utils/timezone");
 // Office hours: 9:30 AM – 6:30 PM = 9 hours standard workday
 const STANDARD_WORKDAY_HOURS = 9;
 
-// Before 10:00 AM = on time
-// 10:00 AM or later = late
+// Before 10:00 AM (India Standard Time) = on time
+// 10:00 AM IST or later = late
 const SCHEDULE_CUTOFF_HOUR = 10;
 
 // One late login per month is forgiven — it does not count against
@@ -744,6 +700,63 @@ const WEIGHTS = {
 // Combined weight pool shared between the HIGH bucket and the
 // LOW+MEDIUM bucket — always 25% total, however it gets split.
 const ON_TIME_POOL_WEIGHT = WEIGHTS.priorityOnTime + WEIGHTS.onTime;
+
+// ============================================================
+// TIMEZONE-SAFE IST HOUR EXTRACTION
+// ============================================================
+//
+// THE BUG THIS FIXES:
+// `date.getHours()` returns the hour according to the SERVER'S OS
+// timezone (process.env.TZ), not the business timezone. Most hosting
+// environments (Docker containers, many cloud VMs) default to UTC.
+// If a login actually happened at 10:18 AM IST, the underlying
+// instant stored in Mongo is the equivalent UTC instant, roughly
+// 04:48 UTC (IST is UTC+5:30). Calling `.getHours()` on a server
+// running in UTC returns `4`, which is `< 10`, so the login was
+// being marked "on time" even though it was 18 minutes late in real
+// wall-clock (IST) time. The frontend looked "wrong" because it
+// displays time correctly (browser is in IST via
+// `toLocaleTimeString("en-IN", ...)`), while the backend's
+// determination of on-time/late silently used a different timezone.
+//
+// THE FIX:
+// Never rely on the host's local timezone. Convert the absolute
+// instant (which `Date#getTime()` always gives correctly, regardless
+// of host TZ) into India Standard Time wall-clock components
+// ourselves, by adding the fixed IST offset (UTC+5:30) and reading
+// back with the UTC getters. This gives the correct IST hour/minute
+// no matter what timezone the Node process itself is running in.
+// ============================================================
+
+const IST_OFFSET_MINUTES = 5 * 60 + 30; // India Standard Time = UTC+5:30
+const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
+
+function getISTHourMinute(date) {
+  const d = new Date(date);
+  // `d.getTime()` is an absolute, timezone-independent epoch value.
+  // Shifting it by the IST offset and reading it back with the UTC
+  // getters yields IST wall-clock time regardless of the server's
+  // own configured timezone.
+  const istShifted = new Date(d.getTime() + IST_OFFSET_MS);
+  return {
+    hours: istShifted.getUTCHours(),
+    minutes: istShifted.getUTCMinutes(),
+  };
+}
+
+/**
+ * Returns true if the login happened strictly BEFORE 10:00:00 AM IST
+ * (on time), false if it happened AT or AFTER 10:00:00 AM IST (late).
+ * This is timezone-safe: it does not depend on the server process's
+ * local timezone setting.
+ */
+function isOnTimeLogin(loginTime) {
+  if (!loginTime) return false;
+  const { hours } = getISTHourMinute(loginTime);
+  // hours < 10  -> definitely before 10:00 AM IST, regardless of minute
+  // hours >= 10 -> 10:00:00 AM IST or later
+  return hours < SCHEDULE_CUTOFF_HOUR;
+}
 
 // ============================================================
 // DATE HELPERS
@@ -879,28 +892,10 @@ function attendanceSeconds(record, { live = true } = {}) {
       return sum + Number(session.duration || 0);
     }
 
-    // THE FIX (defense in depth): extend elapsed time only up to the
-    // session's last confirmed heartbeat (`lastSeenAt`), not blindly
-    // to `now`. Normally `ensureCheckedInToday` (attendanceCleanup.js)
-    // closes out any session whose heartbeat has gone stale before
-    // this ever runs — but if a report happens to be generated in the
-    // narrow window before that cleanup catches up, this stops the
-    // number from inflating past the last moment we actually know
-    // someone was there. If no heartbeat was ever recorded (older
-    // data, or a session created before this field existed), fall
-    // back to `now` as before.
     const loginTime = new Date(session.loginTime);
-    const rawReference = session.lastSeenAt ? new Date(session.lastSeenAt) : now;
-    // Guard against a missing/malformed lastSeenAt (older records,
-    // or a session created before this field existed) producing an
-    // Invalid Date, which would silently turn every downstream number
-    // into NaN instead of throwing an obvious error.
-    const referencePoint = Number.isNaN(rawReference.getTime()) ? now : rawReference;
-    const cappedReference = referencePoint > now ? now : referencePoint;
-
     const elapsed = Math.max(
       0,
-      Math.floor((cappedReference.getTime() - loginTime.getTime()) / 1000),
+      Math.floor((now.getTime() - loginTime.getTime()) / 1000),
     );
 
     return sum + Math.min(elapsed, MAX_LIVE_SESSION_SECONDS);
@@ -1114,6 +1109,10 @@ async function computeProductivityScore(userId, period = {}) {
 
   // ==========================================================
   // 5. SCHEDULE ADHERENCE % — WITH 1 LATE-LOGIN GRACE DAY/PERIOD
+  //
+  // Uses `isOnTimeLogin()`, which compares against 10:00 AM IST in a
+  // timezone-safe way (see the block above) instead of the server's
+  // local `.getHours()`.
   // ==========================================================
 
   const presentDays = attendance.filter(
@@ -1127,14 +1126,8 @@ async function computeProductivityScore(userId, period = {}) {
     const firstSession = sortedSessions[0];
     if (!firstSession?.loginTime) return false;
 
-    // THE FIX: was `new Date(firstSession.loginTime).getHours() < SCHEDULE_CUTOFF_HOUR`,
-    // which reads the hour in the SERVER PROCESS's own timezone (often
-    // UTC on hosting providers) instead of IST — the timezone this
-    // 10 AM cutoff rule was actually written for, and the timezone
-    // every displayed time on screen already uses ("en-IN" locale).
-    // isOnTimeArrival() explicitly extracts the hour in Asia/Kolkata
-    // regardless of the server's own clock/timezone setting.
-    return isOnTimeArrival(firstSession.loginTime, SCHEDULE_CUTOFF_HOUR);
+    // Before 10:00 AM IST = on time, 10:00 AM IST or later = late
+    return isOnTimeLogin(firstSession.loginTime);
   });
 
   const lateLoginDaysCount = presentDays.length - onTimeLoginDays.length;
@@ -1341,6 +1334,8 @@ module.exports = {
   monthRange,
   countWorkingDays,
   isSameLocalDay,
+  isOnTimeLogin,
+  getISTHourMinute,
 
   WEIGHTS,
   ON_TIME_POOL_WEIGHT,
