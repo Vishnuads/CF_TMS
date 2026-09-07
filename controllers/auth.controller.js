@@ -418,7 +418,7 @@ exports.logout = async (req, res) => {
   } catch (err) {
     console.error("Attendance logout error:", err);
   }
-
+ 
   res.json({ message: "Logged out" });
 };
 

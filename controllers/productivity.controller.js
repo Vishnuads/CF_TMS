@@ -311,23 +311,34 @@ const attendance = result.raw.attendance.map((record) => {
   const sessions = Array.isArray(record.sessions)
     ? [...record.sessions].sort(
         (a, b) =>
-          new Date(a.loginTime) -
-          new Date(b.loginTime)
+          new Date(a.loginTime).getTime() -
+          new Date(b.loginTime).getTime()
       )
     : [];
 
   const firstCheckIn =
     sessions[0]?.loginTime || null;
 
+  const latestSession =
+    sessions[sessions.length - 1] || null;
+
+  // IMPORTANT:
+  // If the latest session is active,
+  // don't show an old logout time.
+  const latestSessionIsActive =
+    latestSession && !latestSession.logoutTime;
+
   const closedSessions = sessions.filter(
     (session) => session.logoutTime
   );
 
   const lastCheckOut =
-    closedSessions.length > 0
+    latestSessionIsActive
+      ? null
+      : closedSessions.length > 0
       ? closedSessions.reduce((latest, current) =>
-          new Date(current.logoutTime) >
-          new Date(latest.logoutTime)
+          new Date(current.logoutTime).getTime() >
+          new Date(latest.logoutTime).getTime()
             ? current
             : latest
         ).logoutTime
@@ -342,6 +353,7 @@ const attendance = result.raw.attendance.map((record) => {
     date: record.date,
 
     firstCheckIn,
+
     lastCheckOut,
 
     onTimeArrival: firstCheckIn
@@ -349,9 +361,12 @@ const attendance = result.raw.attendance.map((record) => {
       : false,
 
     totalDuration,
+
     totalDurationLabel: fmtDuration(totalDuration),
 
     sessionCount: sessions.length,
+
+    isActive: Boolean(latestSessionIsActive),
   };
 });
 
