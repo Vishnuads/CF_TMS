@@ -1050,10 +1050,7 @@ function countWorkingDays(start, end) {
 //
 // ------------------------------------------------------------
 
-function attendanceSeconds(
-  record,
-  { live = true } = {}
-) {
+function attendanceSeconds(record, { live = true } = {}) {
   const sessions = Array.isArray(record?.sessions)
     ? [...record.sessions]
     : [];
@@ -1062,10 +1059,7 @@ function attendanceSeconds(
     return 0;
   }
 
-  // ----------------------------------------------------------
-  // SORT SESSIONS BY LOGIN TIME
-  // ----------------------------------------------------------
-
+  // Sort sessions by login time
   sessions.sort((a, b) => {
     const aTime = new Date(a?.loginTime).getTime();
     const bTime = new Date(b?.loginTime).getTime();
@@ -1073,41 +1067,30 @@ function attendanceSeconds(
     return aTime - bTime;
   });
 
-  // ----------------------------------------------------------
-  // FIRST CHECK-IN
-  // ----------------------------------------------------------
-
-  const firstCheckIn =
-    sessions[0]?.loginTime || null;
+  // First login of the day
+  const firstCheckIn = sessions.find(
+    (session) => session?.loginTime
+  )?.loginTime;
 
   if (!firstCheckIn) {
     return 0;
   }
 
-  const firstCheckInMs =
-    new Date(firstCheckIn).getTime();
+  const firstCheckInMs = new Date(firstCheckIn).getTime();
 
   if (!Number.isFinite(firstCheckInMs)) {
     return 0;
   }
 
-  // ----------------------------------------------------------
-  // LATEST SESSION
-  // ----------------------------------------------------------
+  // Latest session
+  const latestSession = sessions[sessions.length - 1];
 
-  const latestSession =
-    sessions[sessions.length - 1];
-
-  const latestSessionIsActive =
-    Boolean(latestSession) &&
+  const latestSessionIsOpen =
+    latestSession &&
     !latestSession.logoutTime;
 
-  // ----------------------------------------------------------
-  // CHECK WHETHER RECORD IS TODAY
-  // ----------------------------------------------------------
-
-  const recordDate =
-    record?.date || firstCheckIn;
+  // Check whether attendance record belongs to today
+  const recordDate = record?.date || firstCheckIn;
 
   const recordIsToday = isSameLocalDay(
     recordDate,
@@ -1115,30 +1098,13 @@ function attendanceSeconds(
   );
 
   // ==========================================================
-  // CASE 1
-  // LATEST SESSION IS ACTIVE
-  // ==========================================================
-  //
-  // Example:
-  //
-  // 09:34 → 10:07
-  // 10:07 → ACTIVE
-  //
-  // Result:
-  //
-  // 09:34 → NOW
-  //
-  // IMPORTANT:
-  // We check this BEFORE lastCheckOut.
-  //
-  // Otherwise an earlier logout would incorrectly stop
-  // the attendance timer.
+  // LIVE SESSION
   // ==========================================================
 
   if (
     live &&
     recordIsToday &&
-    latestSessionIsActive
+    latestSessionIsOpen
   ) {
     const elapsedSeconds = Math.max(
       0,
@@ -1154,22 +1120,7 @@ function attendanceSeconds(
   }
 
   // ==========================================================
-  // CASE 2
-  // LATEST SESSION IS CLOSED
-  // ==========================================================
-  //
-  // Find the latest valid logout.
-  //
-  // Example:
-  //
-  // 09:20 → 02:00
-  // 02:30 → 07:00
-  //
-  // Result:
-  //
-  // 09:20 → 07:00
-  //
-  // = 9h 40m
+  // CLOSED SESSIONS
   // ==========================================================
 
   const closedSessions = sessions.filter(
@@ -1178,8 +1129,9 @@ function attendanceSeconds(
         return false;
       }
 
-      const logoutMs =
-        new Date(session.logoutTime).getTime();
+      const logoutMs = new Date(
+        session.logoutTime
+      ).getTime();
 
       return Number.isFinite(logoutMs);
     }
@@ -1189,36 +1141,31 @@ function attendanceSeconds(
     return 0;
   }
 
-  const latestClosedSession =
-    closedSessions.reduce(
-      (latest, current) => {
-        const latestLogoutMs =
-          new Date(
-            latest.logoutTime
-          ).getTime();
+  // Get latest logout
+  const latestLogout = closedSessions.reduce(
+    (latest, current) => {
+      const latestMs = new Date(
+        latest.logoutTime
+      ).getTime();
 
-        const currentLogoutMs =
-          new Date(
-            current.logoutTime
-          ).getTime();
+      const currentMs = new Date(
+        current.logoutTime
+      ).getTime();
 
-        return currentLogoutMs > latestLogoutMs
-          ? current
-          : latest;
-      }
-    );
+      return currentMs > latestMs
+        ? current
+        : latest;
+    }
+  );
 
-  const lastCheckOut =
-    latestClosedSession.logoutTime;
-
-  const lastCheckOutMs =
-    new Date(lastCheckOut).getTime();
+  const lastCheckOutMs = new Date(
+    latestLogout.logoutTime
+  ).getTime();
 
   if (!Number.isFinite(lastCheckOutMs)) {
     return 0;
   }
 
-  // Prevent invalid negative duration.
   if (lastCheckOutMs < firstCheckInMs) {
     return 0;
   }
