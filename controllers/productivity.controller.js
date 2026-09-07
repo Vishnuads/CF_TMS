@@ -269,44 +269,60 @@ exports.getEmployeeProductivity = async (req, res) => {
 
 
 
+const attendance = result.raw.attendance.map((record) => {
+  const sessions = Array.isArray(record.sessions)
+    ? [...record.sessions]
+    : [];
 
-    const attendance = result.raw.attendance.map((record) => {
-  const sessions = [...(record.sessions || [])].sort(
+  // Always chronological
+  sessions.sort(
     (a, b) => new Date(a.loginTime) - new Date(b.loginTime)
   );
 
   const firstCheckIn = sessions[0]?.loginTime || null;
 
-  const closed = sessions.filter(s => s.logoutTime);
+  const closedSessions = sessions.filter(
+    (session) => session.logoutTime
+  );
 
   const lastCheckOut =
-    closed.length > 0
-      ? closed.reduce((a, b) =>
-          new Date(a.logoutTime) > new Date(b.logoutTime) ? a : b
-        ).logoutTime
+    closedSessions.length > 0
+      ? closedSessions.reduce((latest, current) => {
+          return new Date(current.logoutTime) >
+            new Date(latest.logoutTime)
+            ? current
+            : latest;
+        }).logoutTime
       : null;
 
-  const totalDuration =
-    firstCheckIn && lastCheckOut
-      ? Math.floor(
-          (new Date(lastCheckOut) - new Date(firstCheckIn)) / 1000
-        )
-      : 0;
+  // IMPORTANT:
+  // Calculate actual session durations, not first login → last logout
+  const totalDuration = attendanceSeconds(record);
 
   return {
     _id: record._id,
     date: record.date,
+
     firstCheckIn,
+
     lastCheckOut,
+
     onTimeArrival: firstCheckIn
       ? isOnTimeLogin(firstCheckIn)
       : false,
+
     totalDuration,
+
     totalDurationLabel: fmtDuration(totalDuration),
+
     sessionCount: sessions.length,
+
+    // Optional but useful for frontend
+    isCurrentlyActive: sessions.some(
+      (session) => !session.logoutTime
+    ),
   };
 });
-
 
     // ========================================================
     // TASK TABLE

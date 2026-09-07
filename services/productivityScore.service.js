@@ -224,38 +224,70 @@ function attendanceSeconds(record, { live = true } = {}) {
 
   if (sessions.length === 0) return 0;
 
-  // Sort by login time
+  // Always sort sessions chronologically
   sessions.sort(
     (a, b) => new Date(a.loginTime) - new Date(b.loginTime)
   );
 
-  const firstCheckIn = sessions[0]?.loginTime || null;
+  const now = Date.now();
 
-  const closed = sessions.filter(s => s.logoutTime);
+  let totalSeconds = 0;
 
-  const lastCheckOut =
-    closed.length > 0
-      ? closed.reduce((a, b) =>
-          new Date(a.logoutTime) > new Date(b.logoutTime) ? a : b
-        ).logoutTime
-      : null;
+  for (const session of sessions) {
+    if (!session.loginTime) continue;
 
-  // Current day + live session
-  if (!lastCheckOut && live && isSameLocalDay(record.date, new Date())) {
-    return Math.floor(
-      (Date.now() - new Date(firstCheckIn).getTime()) / 1000
-    );
+    const loginTime = new Date(session.loginTime).getTime();
+
+    // ----------------------------------------------------------
+    // CLOSED SESSION
+    // ----------------------------------------------------------
+    if (session.logoutTime) {
+      const logoutTime = new Date(session.logoutTime).getTime();
+
+      if (
+        Number.isFinite(loginTime) &&
+        Number.isFinite(logoutTime) &&
+        logoutTime >= loginTime
+      ) {
+        totalSeconds += Math.floor(
+          (logoutTime - loginTime) / 1000
+        );
+      }
+
+      continue;
+    }
+
+    // ----------------------------------------------------------
+    // OPEN / LIVE SESSION
+    // ----------------------------------------------------------
+    if (live && Number.isFinite(loginTime)) {
+      const recordIsToday = isSameLocalDay(
+        record.date || new Date(),
+        new Date()
+      );
+
+      if (recordIsToday) {
+        const elapsed = Math.max(
+          0,
+          Math.floor((now - loginTime) / 1000)
+        );
+
+        totalSeconds += Math.min(
+          elapsed,
+          MAX_LIVE_SESSION_SECONDS
+        );
+      } else {
+        // Old open session — don't let it grow forever
+        totalSeconds += Number(session.duration || 0);
+      }
+    } else {
+      totalSeconds += Number(session.duration || 0);
+    }
   }
 
-  // First login → Last logout
-  if (firstCheckIn && lastCheckOut) {
-    return Math.floor(
-      (new Date(lastCheckOut) - new Date(firstCheckIn)) / 1000
-    );
-  }
-
-  return 0;
+  return Math.max(0, Math.floor(totalSeconds));
 }
+
 
 
 
