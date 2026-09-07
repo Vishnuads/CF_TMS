@@ -246,6 +246,52 @@ function countWorkingDays(start, end) {
 
 
 
+// function attendanceSeconds(record, { live = true } = {}) {
+//   const sessions = Array.isArray(record.sessions)
+//     ? [...record.sessions]
+//     : [];
+
+//   if (sessions.length === 0) return 0;
+
+//   // Sort by login time
+//   sessions.sort(
+//     (a, b) => new Date(a.loginTime) - new Date(b.loginTime)
+//   );
+
+//   const firstCheckIn = sessions[0]?.loginTime || null;
+
+//   const closed = sessions.filter(s => s.logoutTime);
+
+//   const lastCheckOut =
+//     closed.length > 0
+//       ? closed.reduce((a, b) =>
+//           new Date(a.logoutTime) > new Date(b.logoutTime) ? a : b
+//         ).logoutTime
+//       : null;
+
+//   // Current day + live session
+//   if (!lastCheckOut && live && isSameLocalDay(record.date, new Date())) {
+//     return Math.floor(
+//       (Date.now() - new Date(firstCheckIn).getTime()) / 1000
+//     );
+//   }
+
+//   // First login → Last logout
+//   if (firstCheckIn && lastCheckOut) {
+//     return Math.floor(
+//       (new Date(lastCheckOut) - new Date(firstCheckIn)) / 1000
+//     );
+//   }
+
+//   return 0;
+// }
+
+
+
+
+
+
+
 function attendanceSeconds(record, { live = true } = {}) {
   const sessions = Array.isArray(record.sessions)
     ? [...record.sessions]
@@ -253,34 +299,90 @@ function attendanceSeconds(record, { live = true } = {}) {
 
   if (sessions.length === 0) return 0;
 
-  // Sort by login time
+  // Always sort by login time
   sessions.sort(
-    (a, b) => new Date(a.loginTime) - new Date(b.loginTime)
+    (a, b) =>
+      new Date(a.loginTime).getTime() -
+      new Date(b.loginTime).getTime()
   );
 
   const firstCheckIn = sessions[0]?.loginTime || null;
 
-  const closed = sessions.filter(s => s.logoutTime);
+  // Find the latest logout among all closed sessions
+  const closedSessions = sessions.filter(
+    (session) => session.logoutTime
+  );
 
   const lastCheckOut =
-    closed.length > 0
-      ? closed.reduce((a, b) =>
-          new Date(a.logoutTime) > new Date(b.logoutTime) ? a : b
-        ).logoutTime
+    closedSessions.length > 0
+      ? closedSessions.reduce((latest, current) => {
+          return new Date(current.logoutTime).getTime() >
+            new Date(latest.logoutTime).getTime()
+            ? current
+            : latest;
+        }).logoutTime
       : null;
 
-  // Current day + live session
-  if (!lastCheckOut && live && isSameLocalDay(record.date, new Date())) {
-    return Math.floor(
-      (Date.now() - new Date(firstCheckIn).getTime()) / 1000
-    );
+  // ----------------------------------------------------------
+  // CASE 1:
+  // We have first login + final logout
+  //
+  // Example:
+  // 09:20 → 02:00
+  // 02:30 → 07:00
+  //
+  // Result:
+  // 09:20 → 07:00 = 9h 40m
+  // ----------------------------------------------------------
+
+  if (firstCheckIn && lastCheckOut) {
+    const start = new Date(firstCheckIn).getTime();
+    const end = new Date(lastCheckOut).getTime();
+
+    if (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end >= start
+    ) {
+      return Math.floor((end - start) / 1000);
+    }
   }
 
-  // First login → Last logout
-  if (firstCheckIn && lastCheckOut) {
-    return Math.floor(
-      (new Date(lastCheckOut) - new Date(firstCheckIn)) / 1000
-    );
+  // ----------------------------------------------------------
+  // CASE 2:
+  // There is an active session today
+  //
+  // Example:
+  // 09:20 → 02:00
+  // 02:30 → still active
+  //
+  // Result:
+  // 09:20 → NOW
+  // ----------------------------------------------------------
+
+  const recordIsToday = isSameLocalDay(
+    record.date || new Date(),
+    new Date()
+  );
+
+  if (
+    firstCheckIn &&
+    live &&
+    recordIsToday
+  ) {
+    const start = new Date(firstCheckIn).getTime();
+
+    if (Number.isFinite(start)) {
+      const elapsed = Math.max(
+        0,
+        Math.floor((Date.now() - start) / 1000)
+      );
+
+      return Math.min(
+        elapsed,
+        MAX_LIVE_SESSION_SECONDS
+      );
+    }
   }
 
   return 0;
