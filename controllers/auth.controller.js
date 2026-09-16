@@ -246,189 +246,189 @@ exports.register = async (req, res) => {
 // };
 
 
-// exports.login = async (req, res) => {
-//   const { email, password } = req.body;
-
-//   const user = await User.findOne({ email }).populate("role");
-//   if (!user) return res.status(401).json({ message: "Invalid credentials" });
-
-//   if (!user.isActive) {
-//     return res.status(403).json({ message: "Account deactivated" });
-//   }
-
-//   const isMatch = await bcrypt.compare(password, user.password);
-//   if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
-
-//   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-
-//   await Session.create({
-//     user: user._id,
-//     token,
-//     isValid: true,
-//     client: "web",
-//   });
-
-//   const desktopToken = jwt.sign(
-//     { id: user._id, client: "desktop" },
-//     process.env.JWT_SECRET,
-//   );
-
-//   await Session.create({
-//     user: user._id,
-//     token: desktopToken,
-//     isValid: true,
-//     client: "desktop",
-//   });
-
-//   // ✅ ATTENDANCE — shared logic, same function the /checkin route uses
-//   try {
-//     await recordCheckIn(user._id, user.name);
-//   } catch (err) {
-//     console.error("Attendance login error:", err);
-//   }
-
-
-//   res.json({
-//     token,
-//     desktopToken, // NEW
-//     role: user.role.name,
-//     permissions: user.role.permissions,
-//     name: user.name,
-//     email: user.email,
-//     id: user._id,
-//   });
-// };
-
-
-
 exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    // ---------------------------------------
-    // CHECK DESKTOP CLIENT
-    // ---------------------------------------
-    const appSecret = req.headers["x-app-secret"];
+  const user = await User.findOne({ email }).populate("role");
+  if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
-
-      // 🔍 TEMPORARY DEBUG — remove once confirmed working
-    console.log("── LOGIN DEBUG ──");
-    console.log("Header received:", appSecret);
-    console.log("Env secret loaded:", process.env.APP_CLIENT_SECRET);
-    console.log("Match:", appSecret === process.env.APP_CLIENT_SECRET);
-
-
-    const isDesktop =
-      !!appSecret &&
-      appSecret === process.env.APP_CLIENT_SECRET;
-
-    // ---------------------------------------
-    // FIND USER
-    // ---------------------------------------
-    const user = await User.findOne({ email }).populate("role");
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: "Account deactivated",
-      });
-    }
-
-    // ---------------------------------------
-    // PASSWORD
-    // ---------------------------------------
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
-    // ---------------------------------------
-    // ROLE CHECK
-    // ---------------------------------------
-    const roleName = user.role?.name;
-
-    if (!roleName) {
-      return res.status(403).json({
-        success: false,
-        message: "User role is not configured.",
-      });
-    }
-
-    // ---------------------------------------
-    // BROWSER → ADMIN ONLY
-    // DESKTOP → EMPLOYEE + ADMIN
-    // ---------------------------------------
-    if (!isDesktop && roleName !== "ADMIN") {
-      return res.status(403).json({
-        success: false, 
-        message: "Please use the Employee Desktop Application.",
-      });
-    }
-
-    // ---------------------------------------
-    // JWT
-    // ---------------------------------------
-    const client = isDesktop ? "desktop" : "web";
-
-    const token = jwt.sign(
-      {
-        id: user._id,
-        client,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      }
-    );
-
-    // ---------------------------------------
-    // SESSION
-    // ---------------------------------------
-    await Session.create({
-      user: user._id,
-      token,
-      isValid: true,
-      client,
-    });
-
-    // ---------------------------------------
-    // ATTENDANCE
-    // ---------------------------------------
-    await recordCheckIn(user._id, user.name);
-
-    // ---------------------------------------
-    // RESPONSE
-    // ---------------------------------------
-    return res.json({
-      success: true,
-      token,
-      client,
-      role: roleName,
-      permissions: user.role.permissions,
-      name: user.name,
-      email: user.email,
-      id: user._id,
-    });
-  } catch (error) {
-    console.error("LOGIN ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error during login",
-    });
+  if (!user.isActive) {
+    return res.status(403).json({ message: "Account deactivated" });
   }
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+
+  await Session.create({
+    user: user._id,
+    token,
+    isValid: true,
+    client: "web",
+  });
+
+  const desktopToken = jwt.sign(
+    { id: user._id, client: "desktop" },
+    process.env.JWT_SECRET,
+  );
+
+  await Session.create({
+    user: user._id,
+    token: desktopToken,
+    isValid: true,
+    client: "desktop",
+  });
+
+  // ✅ ATTENDANCE — shared logic, same function the /checkin route uses
+  try {
+    await recordCheckIn(user._id, user.name);
+  } catch (err) {
+    console.error("Attendance login error:", err);
+  }
+
+
+  res.json({
+    token,
+    desktopToken, // NEW
+    role: user.role.name,
+    permissions: user.role.permissions,
+    name: user.name,
+    email: user.email,
+    id: user._id,
+  });
 };
+
+
+
+// exports.login = async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+
+//     // ---------------------------------------
+//     // CHECK DESKTOP CLIENT
+//     // ---------------------------------------
+//     const appSecret = req.headers["x-app-secret"];
+
+
+//       // 🔍 TEMPORARY DEBUG — remove once confirmed working
+//     console.log("── LOGIN DEBUG ──");
+//     console.log("Header received:", appSecret);
+//     console.log("Env secret loaded:", process.env.APP_CLIENT_SECRET);
+//     console.log("Match:", appSecret === process.env.APP_CLIENT_SECRET);
+
+
+//     const isDesktop =
+//       !!appSecret &&
+//       appSecret === process.env.APP_CLIENT_SECRET;
+
+//     // ---------------------------------------
+//     // FIND USER
+//     // ---------------------------------------
+//     const user = await User.findOne({ email }).populate("role");
+
+//     if (!user) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Invalid credentials",
+//       });
+//     }
+
+//     if (!user.isActive) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "Account deactivated",
+//       });
+//     }
+
+//     // ---------------------------------------
+//     // PASSWORD
+//     // ---------------------------------------
+//     const isMatch = await bcrypt.compare(password, user.password);
+
+//     if (!isMatch) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Invalid credentials",
+//       });
+//     }
+
+//     // ---------------------------------------
+//     // ROLE CHECK
+//     // ---------------------------------------
+//     const roleName = user.role?.name;
+
+//     if (!roleName) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "User role is not configured.",
+//       });
+//     }
+
+//     // ---------------------------------------
+//     // BROWSER → ADMIN ONLY
+//     // DESKTOP → EMPLOYEE + ADMIN
+//     // ---------------------------------------
+//     if (!isDesktop && roleName !== "ADMIN") {
+//       return res.status(403).json({
+//         success: false, 
+//         message: "Please use the Employee Desktop Application.",
+//       });
+//     }
+
+//     // ---------------------------------------
+//     // JWT
+//     // ---------------------------------------
+//     const client = isDesktop ? "desktop" : "web";
+
+//     const token = jwt.sign(
+//       {
+//         id: user._id,
+//         client,
+//       },
+//       process.env.JWT_SECRET,
+//       {
+//         expiresIn: "1d",
+//       }
+//     );
+
+//     // ---------------------------------------
+//     // SESSION
+//     // ---------------------------------------
+//     await Session.create({
+//       user: user._id,
+//       token,
+//       isValid: true,
+//       client,
+//     });
+
+//     // ---------------------------------------
+//     // ATTENDANCE
+//     // ---------------------------------------
+//     await recordCheckIn(user._id, user.name);
+
+//     // ---------------------------------------
+//     // RESPONSE
+//     // ---------------------------------------
+//     return res.json({
+//       success: true,
+//       token,
+//       client,
+//       role: roleName,
+//       permissions: user.role.permissions,
+//       name: user.name,
+//       email: user.email,
+//       id: user._id,
+//     });
+//   } catch (error) {
+//     console.error("LOGIN ERROR:", error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error during login",
+//     });
+//   }
+// };
 
 
 
