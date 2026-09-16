@@ -4,15 +4,13 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
-const Role = require("../models/Role")
+const Role = require("../models/Role");
 const Attendance = require("../models/Attendance");
 const socket = require("../socket");
 
 const { recordCheckIn, closeOpenSessionNow } = require("./attendanceCleanup");
 
-
-
- function startOfDay(d = new Date()) {
+function startOfDay(d = new Date()) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
@@ -26,17 +24,15 @@ const { recordCheckIn, closeOpenSessionNow } = require("./attendanceCleanup");
 //   }
 // });
 
-
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 465,
   secure: true,
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS 
-  }
+    pass: process.env.EMAIL_PASS,
+  },
 });
-
 
 exports.register = async (req, res) => {
   try {
@@ -61,17 +57,17 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       role: roleId._id,
-      isActive: true
+      isActive: true,
     });
 
     // ✅ send email (keep your existing mail code)
 
     const loginUrl = process.env.TEAMLOGIN;
-const mailOptions = {
-  from: `"TaskFlow Admin" <${process.env.EMAIL_USER}>`,
-  to: email,
-  subject: "🚀 You're Invited to TaskFlow",
-  html: `
+    const mailOptions = {
+      from: `"TaskFlow Admin" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "🚀 You're Invited to TaskFlow",
+      html: `
   <div style="background:#f4f6fb;padding:40px 0;font-family:Arial,Helvetica,sans-serif">
     <table align="center" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.08)">
       
@@ -152,11 +148,9 @@ const mailOptions = {
     </table>
   </div>
   `,
-};
-
+    };
 
     await transporter.sendMail(mailOptions);
-
 
     res.status(201).json({
       message: "User invited successfully",
@@ -164,16 +158,14 @@ const mailOptions = {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: roleId.name
-      }
+        role: roleId.name,
+      },
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Registration failed" });
   }
 };
-
-
 
 // exports.login = async (req, res) => {
 //   const { email, password } = req.body;
@@ -200,9 +192,6 @@ const mailOptions = {
 //   isValid: true
 // });
 
-
-
-
 //  // ✅ ATTENDANCE — record login (creates today's doc, or opens a new session)
 //   try {
 //     const today = startOfDay();
@@ -223,8 +212,6 @@ const mailOptions = {
 //     console.error("Attendance login error:", err);
 //     // Don't block login if attendance recording fails
 //   }
-
-
 
 //     // ✅ SOCKET — notify admin panel of check-in, live
 //   try {
@@ -253,95 +240,195 @@ const mailOptions = {
 //   });
 // };
 
-
-
 // exports.logout = async (req, res) => {
 //   await Session.updateOne({ token: req.token }, { isValid: false });
 //   res.json({ message: "Logged out" });
 // };
 
 
+// exports.login = async (req, res) => {
+//   const { email, password } = req.body;
+
+//   const user = await User.findOne({ email }).populate("role");
+//   if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+//   if (!user.isActive) {
+//     return res.status(403).json({ message: "Account deactivated" });
+//   }
+
+//   const isMatch = await bcrypt.compare(password, user.password);
+//   if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+
+//   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+
+//   await Session.create({
+//     user: user._id,
+//     token,
+//     isValid: true,
+//     client: "web",
+//   });
+
+//   const desktopToken = jwt.sign(
+//     { id: user._id, client: "desktop" },
+//     process.env.JWT_SECRET,
+//   );
+
+//   await Session.create({
+//     user: user._id,
+//     token: desktopToken,
+//     isValid: true,
+//     client: "desktop",
+//   });
+
+//   // ✅ ATTENDANCE — shared logic, same function the /checkin route uses
+//   try {
+//     await recordCheckIn(user._id, user.name);
+//   } catch (err) {
+//     console.error("Attendance login error:", err);
+//   }
+
+
+//   res.json({
+//     token,
+//     desktopToken, // NEW
+//     role: user.role.name,
+//     permissions: user.role.permissions,
+//     name: user.name,
+//     email: user.email,
+//     id: user._id,
+//   });
+// };
 
 
 
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
-
-  const user = await User.findOne({ email }).populate("role");
-  if (!user) return res.status(401).json({ message: "Invalid credentials" });
-
-  if (!user.isActive) {
-    return res.status(403).json({ message: "Account deactivated" });
-  }
-
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
-
-  const token = jwt.sign(
-    { id: user._id },
-    process.env.JWT_SECRET
-  );
-
-  await Session.create({
-    user: user._id,
-    token,
-    isValid: true,
-  });
-
-
-    // ✅ ATTENDANCE — shared logic, same function the /checkin route uses
   try {
+    const { email, password } = req.body;
+
+    // ---------------------------------------
+    // CHECK DESKTOP CLIENT
+    // ---------------------------------------
+    const appSecret = req.headers["x-app-secret"];
+
+
+      // 🔍 TEMPORARY DEBUG — remove once confirmed working
+    console.log("── LOGIN DEBUG ──");
+    console.log("Header received:", appSecret);
+    console.log("Env secret loaded:", process.env.APP_CLIENT_SECRET);
+    console.log("Match:", appSecret === process.env.APP_CLIENT_SECRET);
+
+
+    const isDesktop =
+      !!appSecret &&
+      appSecret === process.env.APP_CLIENT_SECRET;
+
+    // ---------------------------------------
+    // FIND USER
+    // ---------------------------------------
+    const user = await User.findOne({ email }).populate("role");
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Account deactivated",
+      });
+    }
+
+    // ---------------------------------------
+    // PASSWORD
+    // ---------------------------------------
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    // ---------------------------------------
+    // ROLE CHECK
+    // ---------------------------------------
+    const roleName = user.role?.name;
+
+    if (!roleName) {
+      return res.status(403).json({
+        success: false,
+        message: "User role is not configured.",
+      });
+    }
+
+    // ---------------------------------------
+    // BROWSER → ADMIN ONLY
+    // DESKTOP → EMPLOYEE + ADMIN
+    // ---------------------------------------
+    if (!isDesktop && roleName !== "ADMIN") {
+      return res.status(403).json({
+        success: false, 
+        message: "Please use the Employee Desktop Application.",
+      });
+    }
+
+    // ---------------------------------------
+    // JWT
+    // ---------------------------------------
+    const client = isDesktop ? "desktop" : "web";
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        client,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1d",
+      }
+    );
+
+    // ---------------------------------------
+    // SESSION
+    // ---------------------------------------
+    await Session.create({
+      user: user._id,
+      token,
+      isValid: true,
+      client,
+    });
+
+    // ---------------------------------------
+    // ATTENDANCE
+    // ---------------------------------------
     await recordCheckIn(user._id, user.name);
-  } catch (err) {
-    console.error("Attendance login error:", err);
+
+    // ---------------------------------------
+    // RESPONSE
+    // ---------------------------------------
+    return res.json({
+      success: true,
+      token,
+      client,
+      role: roleName,
+      permissions: user.role.permissions,
+      name: user.name,
+      email: user.email,
+      id: user._id,
+    });
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error during login",
+    });
   }
-
-
-  // const now = new Date();
-
-  // try {
-  //   const today = startOfDay(now);
-  //   let attendance = await Attendance.findOne({ user: user._id, date: today });
-
-  //   if (!attendance) {
-  //     attendance = await Attendance.create({
-  //       user: user._id,
-  //       date: today,
-  //       loginTime: now,
-  //       sessions: [{ loginTime: now }],
-  //     });
-  //   } else {
-  //     attendance.sessions.push({ loginTime: now });
-  //     await attendance.save();
-  //   }
-
-    
-  //   try {
-  //     const io = socket.getIO();
-  //     const payload = {
-  //       userId: user._id,
-  //       name: user.name,
-  //       loginTime: now,
-  //     };
-  //     io.to("admin").emit("attendance-checkin", payload);
-  //     io.emit("attendance-checkin", payload);
-  //   } catch (socketErr) {
-  //     console.error("Socket emit (checkin) failed:", socketErr.message);
-  //   }
-  // } catch (err) {
-  //   console.error("Attendance login error:", err);
-  // }
-
-  res.json({
-    token,
-    role: user.role.name,
-    permissions: user.role.permissions,
-    name: user.name,
-    email: user.email,
-    id: user._id,
-  });
 };
-
 
 
 
@@ -351,6 +438,10 @@ exports.login = async (req, res) => {
 
 //   try {
 //     const userId = req.user?._id || req.user?.id;
+
+//     if (userId) {
+//       await closeOpenSessionNow(userId, "manual");
+//     }
 
 //     if (userId) {
 //       const today = startOfDay();
@@ -402,11 +493,6 @@ exports.login = async (req, res) => {
 //   res.json({ message: "Logged out" });
 // };
 
-
-
-
-
-
 exports.logout = async (req, res) => {
   await Session.updateOne({ token: req.token }, { isValid: false });
 
@@ -418,12 +504,9 @@ exports.logout = async (req, res) => {
   } catch (err) {
     console.error("Attendance logout error:", err);
   }
- 
+
   res.json({ message: "Logged out" });
 };
-
-
-
 
 // exports.logout = async (req, res) => {
 //   await Session.updateOne({ token: req.token }, { isValid: false });
@@ -465,35 +548,6 @@ exports.logout = async (req, res) => {
 //   } catch (err) {
 //     console.error("Attendance logout error:", err);
 //   }
-  
 
 //   res.json({ message: "Logged out" });
 // };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

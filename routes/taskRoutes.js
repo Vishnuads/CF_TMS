@@ -5,6 +5,7 @@ const controller = require("../controllers/taskController");
 const { auth, adminOnly } = require("../middleware/auth.middleware");
 const permission = require("../middleware/permission") 
 const authTask = require("../middleware/chatAuth"); // JWT middleware
+const idleController = require("../controllers/idleController");
 
 
 // router.post(
@@ -31,6 +32,13 @@ router.post("/task", auth, permission("tasks", "create"), (req, res, next) => {
   });
 }, controller.createTask);
 
+
+
+//New
+router.post("/task/idle-hold", auth, idleController.autoHoldOnIdle);
+
+
+
 router.get("/task/unread",authTask, controller.getUnreadTasks);
 router.post("/task/task-read",authTask, controller.markTaskRead);
 
@@ -43,11 +51,15 @@ router.put(
 );
 
 
+
+
 // 🔥 SINGLE TASK (ADD THIS ABOVE project route)
 router.get("/single/:taskId", controller.getSingleTask);
 
 
-router.patch("/task/:taskId/status", controller.updateTaskStatus);
+router.patch("/task/:taskId/status", auth, controller.updateTaskStatus);
+
+// router.patch("/task/:taskId/status", controller.updateTaskStatus);
 router.delete("/task", auth, permission("tasks", "create"), controller.deleteMultipleTasks);
 
 

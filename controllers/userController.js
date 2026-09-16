@@ -64,7 +64,7 @@ exports.getAllUsers = async (req, res) => {
     const users = await User.find().select("name email isOnline role isActive").populate("role", "name");
   // .populate("role", "name"); 
    
-    
+     
   
     res.json(users); 
   } catch (err) {
