@@ -470,6 +470,148 @@ exports.listPendingApprovals = async (req, res) => {
 // POST /api/attendance/approve-logout/:userId   (ADMIN)
 // ============================================================
 
+
+
+
+
+
+
+
+
+
+
+// FIX: fixed logout time credited when Admin approves a missed
+// logout, instead of leaving logoutTime blank (null). Change the
+// hour/minute here if the policy time ever changes. Place this pair
+// near the top of the file (outside the function) alongside your
+// other helpers.
+
+// const APPROVED_LOGOUT_HOUR = 18;   // 6 PM
+// const APPROVED_LOGOUT_MINUTE = 30; // :30 → 6:30 PM
+
+// function getApprovedLogoutTime(baseDate) {
+//   const d = new Date(baseDate);
+//   d.setHours(APPROVED_LOGOUT_HOUR, APPROVED_LOGOUT_MINUTE, 0, 0);
+//   return d;
+// }
+
+// exports.approvePreviousLogout = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+//     const adminId = req.user?._id || req.user?.id;
+
+//     // NEW — defensive guard: an admin's own session should never
+//     // reach this endpoint (it's excluded upstream), but block it
+//     // explicitly too in case it's ever called directly.
+//     if (await isAdminUser(userId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Admin accounts are exempt from the approval workflow",
+//       });
+//     }
+
+//     const record = await Attendance.findOne({
+//       user: userId,
+//       needsApproval: true,
+//     }).sort({ date: -1 });
+
+//     if (!record) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No pending approval found for this user",
+//       });
+//     }
+
+//     let openSessionIndex = -1;
+//     for (let i = record.sessions.length - 1; i >= 0; i--) {
+//       if (!record.sessions[i].logoutTime) {
+//         openSessionIndex = i;
+//         break;
+//       }
+//     }
+
+//     if (openSessionIndex === -1) {
+//       record.needsApproval = false;
+//       await record.save();
+//       return res.status(400).json({
+//         success: false,
+//         message: "No open session found — nothing to approve",
+//       });
+//     }
+
+//     const openSession = record.sessions[openSessionIndex];
+//     const loginTime = openSession.loginTime;
+
+//     // FIX: previously logoutTime = null and duration = 0 (checkout
+//     // left blank). Now it credits a fixed 6:30 PM logout time on the
+//     // session's own day, so the session gets a real checkout and a
+//     // real duration in the DB.
+//     const baseDate = loginTime || record.date || new Date();
+//     const approvedLogoutTime = getApprovedLogoutTime(baseDate);
+
+//     // Guard against a login that happened AFTER 6:30 PM (rare edge
+//     // case) — fall back to the login time itself so duration is 0
+//     // instead of negative.
+//     const finalLogoutTime =
+//       loginTime && approvedLogoutTime < new Date(loginTime)
+//         ? new Date(loginTime)
+//         : approvedLogoutTime;
+
+//     const durationMs = loginTime
+//       ? Math.max(0, finalLogoutTime.getTime() - new Date(loginTime).getTime())
+//       : 0;
+//     // NOTE: stored in minutes — change this line if your Attendance
+//     // schema expects seconds or milliseconds instead.
+//     const durationMinutes = Math.round(durationMs / 60000);
+
+//     record.sessions[openSessionIndex].logoutTime = finalLogoutTime;
+//     record.sessions[openSessionIndex].duration = durationMinutes;
+//     record.sessions[openSessionIndex].autoClosed = false;
+//     record.sessions[openSessionIndex].closeReason = "admin-approved";
+//     record.sessions[openSessionIndex].logoutType = "ADMIN_APPROVED";
+//     record.sessions[openSessionIndex].approvedBy = adminId;
+//     record.sessions[openSessionIndex].approvedAt = new Date();
+
+//     record.logoutTime = finalLogoutTime;
+//     record.needsApproval = false;
+
+//     record.markModified("sessions");
+//     await record.save();
+
+//     try {
+//       const io = socket.getIO();
+//       io.to(`user:${userId}`).emit("attendance-approved", {
+//         message:
+//           "Your previous attendance has been approved by Admin, with checkout recorded at 6:30 PM. Please login again to continue working.",
+//         logoutTime: finalLogoutTime,
+//         approvedAt: record.sessions[openSessionIndex].approvedAt,
+//       });
+//       io.to(`user:${userId}`).emit("force-logout", {
+//         reason: "attendance-approved",
+//       });
+//       io.emit("pending-approval-resolved", { userId });
+//     } catch (err) {
+//       console.error("Socket emit (approve-logout) failed:", err.message);
+//     }
+
+//     res.json({
+//       success: true,
+//       message: "Previous session approved — logout time set to 6:30 PM",
+//       data: {
+//         logoutTime: finalLogoutTime,
+//         duration: durationMinutes,
+//         logoutType: "ADMIN_APPROVED",
+//         approvedAt: record.sessions[openSessionIndex].approvedAt,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("approvePreviousLogout error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+
+
 exports.approvePreviousLogout = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -557,6 +699,7 @@ exports.approvePreviousLogout = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 // ============================================================
 // GET /api/attendance/missing-logout-summary   (ADMIN)
