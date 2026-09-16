@@ -110,7 +110,7 @@ app.use("/api/attendance", attendance);
 app.use("/api/attendance", attendanceApproval); // sits alongside your existing attendance router
 
 app.get("/", (req, res) => {
-  res.send("🚀 ETM API is running successfully!");
+  res.send("🚀 ETM API is running successfully! electron");
 });
 
 app.get("/api/download", (req, res) => {
