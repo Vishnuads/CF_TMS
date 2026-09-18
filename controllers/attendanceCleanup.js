@@ -513,10 +513,10 @@ async function hasPendingApproval(userId) {
 async function closeStaleOpenSessions(userId) {
   // Still-pending records are fully protected — leave them for the
   // admin approval endpoint.
-  if (await hasPendingApproval(userId)) {
-    console.log(`[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`);
-    return;
-  }
+  // if (await hasPendingApproval(userId)) {
+  //   console.log(`[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`);
+  //   return;
+  // }
 
   const today = startOfDay();
 
@@ -638,10 +638,10 @@ async function closeInactiveOpenSessionsToday() {
  * /login call).
  */
 async function recordCheckIn(userId, userName = null) {
-  if (await hasPendingApproval(userId)) {
-    console.log(`[attendance-cleanup] recordCheckIn blocked for ${userId} — pending admin approval`);
-    return null;
-  }
+  // if (await hasPendingApproval(userId)) {
+  //   console.log(`[attendance-cleanup] recordCheckIn blocked for ${userId} — pending admin approval`);
+  //   return null;
+  // }
 
   await closeStaleOpenSessions(userId);
 
