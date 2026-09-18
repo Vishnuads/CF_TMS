@@ -9,6 +9,7 @@
 //   return x;
 // }
 
+
 // const INACTIVITY_THRESHOLD_MS = 60 * 1000; // 60s
 // const WATCHDOG_INTERVAL_MS = 30 * 1000; // check every 30s
 
@@ -23,22 +24,10 @@
 //   }
 // }
 
-// function broadcastCheckout(
-//   userId,
-//   logoutTime,
-//   sessionDuration,
-//   totalDuration,
-//   reason,
-// ) {
+// function broadcastCheckout(userId, logoutTime, sessionDuration, totalDuration, reason) {
 //   try {
 //     const io = socket.getIO();
-//     const payload = {
-//       userId,
-//       logoutTime,
-//       sessionDuration,
-//       totalDuration,
-//       reason,
-//     };
+//     const payload = { userId, logoutTime, sessionDuration, totalDuration, reason };
 //     io.to("admin").emit("attendance-checkout", payload);
 //     io.emit("attendance-checkout", payload);
 //   } catch (err) {
@@ -47,21 +36,19 @@
 // }
 
 // /**
-//  * NEW — guard used everywhere a stale/previous-day session might get
-//  * auto-closed. Once a record is flagged `needsApproval: true` (set by
-//  * the nightly missing-logout sweep in attendanceSweep.js), ONLY
-//  * approvePreviousLogout() in attendanceApproval.controller.js is
-//  * allowed to set its logoutTime. Every auto-close path below must
-//  * skip a user who currently has any flagged record, otherwise a
-//  * background job silently resolves what's supposed to require admin
-//  * sign-off — which is exactly what produced a record with both
-//  * needsApproval:true AND a filled-in logoutTime/closeReason.
+//  * A session that was resolved through the admin-approval workflow is
+//  * PERMANENTLY finalized with an intentionally blank logoutTime.
+//  * needsApproval flips to false right after approval, so it can no
+//  * longer be used to protect the record from auto-close jobs — this
+//  * check (based on closeReason, which never changes again) is what
+//  * actually provides permanent protection.
 //  */
+// function isPermanentlyResolvedByApproval(session) {
+//   return session.closeReason === "admin-approved";
+// }
+
 // async function hasPendingApproval(userId) {
-//   const flagged = await Attendance.exists({
-//     user: userId,
-//     needsApproval: true,
-//   });
+//   const flagged = await Attendance.exists({ user: userId, needsApproval: true });
 //   return Boolean(flagged);
 // }
 
@@ -71,13 +58,10 @@
 //  * came back" without waiting for the hourly sweep.
 //  */
 // async function closeStaleOpenSessions(userId) {
-//   // NEW GUARD — never touch a flagged user's stale sessions. Their
-//   // dashboard is already blocked by MissingLogoutGuard; leave the
-//   // record exactly as the nightly sweep left it until an admin acts.
+//   // Still-pending records are fully protected — leave them for the
+//   // admin approval endpoint.
 //   if (await hasPendingApproval(userId)) {
-//     console.log(
-//       `[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`,
-//     );
+//     console.log(`[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`);
 //     return;
 //   }
 
@@ -93,14 +77,16 @@
 //     let changed = false;
 
 //     for (const session of doc.sessions) {
+//       // FIXED: skip any session that was already resolved via admin
+//       // approval — its blank logoutTime is intentional and permanent,
+//       // not "still needs closing".
+//       if (isPermanentlyResolvedByApproval(session)) continue;
+
 //       if (!session.logoutTime) {
 //         const endOfThatDay = new Date(doc.date);
 //         endOfThatDay.setHours(23, 59, 59, 999);
 
-//         const duration = Math.max(
-//           0,
-//           Math.floor((endOfThatDay - session.loginTime) / 1000),
-//         );
+//         const duration = Math.max(0, Math.floor((endOfThatDay - session.loginTime) / 1000));
 //         session.logoutTime = endOfThatDay;
 //         session.duration = duration;
 //         session.autoClosed = true;
@@ -112,8 +98,7 @@
 //     }
 
 //     if (changed) {
-//       doc.logoutTime =
-//         doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
+//       doc.logoutTime = doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
 //       await doc.save();
 //     }
 //   }
@@ -141,10 +126,7 @@
 
 //   if (!openSession) return attendance; // already closed — nothing to do
 
-//   const duration = Math.max(
-//     0,
-//     Math.floor((now - openSession.loginTime) / 1000),
-//   );
+//   const duration = Math.max(0, Math.floor((now - openSession.loginTime) / 1000));
 //   openSession.logoutTime = now;
 //   openSession.duration = duration;
 //   openSession.autoClosed = reason !== "manual";
@@ -160,21 +142,9 @@
 // }
 
 // /**
-//  * Heartbeat watchdog — this is what actually fixes "still shows active
-//  * through lunch / after the laptop slept". A socket "disconnect" event is
-//  * NOT reliable across OS sleep: the JS event loop can freeze entirely
-//  * (no disconnect, no ping — the tab just goes silent), or the underlying
-//  * TCP connection can take a long time to be noticed as dead. So instead of
-//  * waiting on the socket layer, this checks User.lastSeen directly — which
-//  * is only ever updated by a genuinely alive tab (join-user / presence-ping).
-//  *
-//  * Closes the session AT the last real heartbeat time, not "now" — so the
-//  * sleep gap itself never gets counted as worked time.
-//  *
-//  * This one is SAFE as-is — it only ever operates on TODAY's date, and a
-//  * needsApproval flag is only ever set on a PREVIOUS day's record (the
-//  * nightly sweep only looks at `date: { $lt: today }`), so there's no
-//  * overlap here. No guard needed.
+//  * Heartbeat watchdog — only ever touches TODAY's date, and admin
+//  * approval only ever resolves PREVIOUS days, so there's no overlap
+//  * here. No guard needed.
 //  */
 // async function closeInactiveOpenSessionsToday() {
 //   const today = startOfDay();
@@ -191,19 +161,11 @@
 //     const user = await User.findById(doc.user).select("lastSeen").lean();
 //     const lastSeen = user?.lastSeen ? new Date(user.lastSeen) : null;
 
-//     // No heartbeat recorded yet, or it's still fresh — leave it open.
-//     if (!lastSeen || Date.now() - lastSeen.getTime() < INACTIVITY_THRESHOLD_MS)
-//       continue;
+//     if (!lastSeen || Date.now() - lastSeen.getTime() < INACTIVITY_THRESHOLD_MS) continue;
 
-//     // Never close using a timestamp earlier than the session's own start
-//     // (guards against a stale/very old lastSeen value).
-//     const closeAt =
-//       lastSeen > openSession.loginTime ? lastSeen : openSession.loginTime;
+//     const closeAt = lastSeen > openSession.loginTime ? lastSeen : openSession.loginTime;
 
-//     const duration = Math.max(
-//       0,
-//       Math.floor((closeAt - openSession.loginTime) / 1000),
-//     );
+//     const duration = Math.max(0, Math.floor((closeAt - openSession.loginTime) / 1000));
 //     openSession.logoutTime = closeAt;
 //     openSession.duration = duration;
 //     openSession.autoClosed = true;
@@ -213,34 +175,18 @@
 //     doc.logoutTime = closeAt;
 //     await doc.save();
 
-//     broadcastCheckout(
-//       doc.user,
-//       closeAt,
-//       duration,
-//       doc.totalDuration,
-//       "disconnect",
-//     );
+//     broadcastCheckout(doc.user, closeAt, duration, doc.totalDuration, "disconnect");
 //   }
 // }
 
 // /**
 //  * Opens a new session for "right now". Used by password login AND the
 //  * frontend calling in on tab reopen (existing valid token, no fresh
-//  * /login call). Guards against double-counting: if a session is already
-//  * open today, this is a no-op. Also runs the cross-day stale sweep, so
-//  * it's the right call for an actual login/checkin — but too heavy to run
-//  * on every socket heartbeat (see ensureCheckedInToday below for that).
+//  * /login call).
 //  */
 // async function recordCheckIn(userId, userName = null) {
-//   // NEW GUARD — if this user has a flagged previous session awaiting
-//   // admin approval, don't open a fresh session for them either. The
-//   // frontend (MissingLogoutGuard) already blocks the dashboard UI, but
-//   // this stops a direct/race-condition API call from creating a NEW
-//   // attendance record while the old one is still unresolved.
 //   if (await hasPendingApproval(userId)) {
-//     console.log(
-//       `[attendance-cleanup] recordCheckIn blocked for ${userId} — pending admin approval`,
-//     );
+//     console.log(`[attendance-cleanup] recordCheckIn blocked for ${userId} — pending admin approval`);
 //     return null;
 //   }
 
@@ -296,20 +242,10 @@
 
 // /**
 //  * Lightweight reopen used by high-frequency socket events (join-user,
-//  * presence-ping). This is the piece that was missing before: those events
-//  * only ever touched User.isOnline/lastSeen and never checked whether the
-//  * watchdog (or a disconnect timer) had already closed today's session.
-//  * Waking the laptop and reconnecting now reopens attendance immediately
-//  * instead of requiring an actual password login. Deliberately skips the
-//  * cross-day closeStaleOpenSessions() pass — that's covered by the hourly
-//  * sweep and by recordCheckIn() at real login time — to keep this cheap
-//  * enough to call on every heartbeat.
+//  * presence-ping) — THIS is the function that fires on every page
+//  * refresh, and was the direct trigger for the bug you're seeing.
 //  */
 // async function ensureCheckedInToday(userId) {
-//   // NEW GUARD — mirrors recordCheckIn(). This is the function that was
-//   // firing on every page refresh (join-user) and silently creating/
-//   // extending today's attendance for a user whose previous session was
-//   // still waiting on admin approval.
 //   if (await hasPendingApproval(userId)) {
 //     return null;
 //   }
@@ -350,12 +286,7 @@
 //   const staleDocs = await Attendance.find({
 //     date: { $lt: today },
 //     logoutTime: null,
-//     // NEW GUARD — exclude anything already flagged for admin approval,
-//     // so this sweep can never do what closeStaleOpenSessions() was
-//     // doing: silently closing a session that's supposed to require a
-//     // human decision.
 //     needsApproval: { $ne: true },
-//     "sessions.logoutType": { $ne: "ADMIN_APPROVED" },   // neww
 //   });
 
 //   let closedCount = 0;
@@ -364,14 +295,17 @@
 //     let changed = false;
 
 //     for (const session of doc.sessions) {
+//       // FIXED: same permanent-resolution guard as closeStaleOpenSessions.
+//       // Without this, the hourly cron alone is enough to silently
+//       // overwrite an admin-approved blank checkout with a fabricated
+//       // 11:59 PM end-of-day time — which is exactly what you saw.
+//       if (isPermanentlyResolvedByApproval(session)) continue;
+
 //       if (!session.logoutTime) {
 //         const endOfThatDay = new Date(doc.date);
 //         endOfThatDay.setHours(23, 59, 59, 999);
 
-//         const duration = Math.max(
-//           0,
-//           Math.floor((endOfThatDay - session.loginTime) / 1000),
-//         );
+//         const duration = Math.max(0, Math.floor((endOfThatDay - session.loginTime) / 1000));
 //         session.logoutTime = endOfThatDay;
 //         session.duration = duration;
 //         session.autoClosed = true;
@@ -383,47 +317,35 @@
 //     }
 
 //     if (changed) {
-//       doc.logoutTime =
-//         doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
+//       doc.logoutTime = doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
 //       await doc.save();
 //       closedCount++;
 
-//       broadcastCheckout(
-//         doc.user,
-//         doc.logoutTime,
-//         0,
-//         doc.totalDuration,
-//         "daily-sweep",
-//       );
+//       broadcastCheckout(doc.user, doc.logoutTime, 0, doc.totalDuration, "daily-sweep");
 //     }
 //   }
 
 //   if (closedCount > 0) {
-//     console.log(
-//       `[attendance-cleanup] Auto-closed ${closedCount} stale session(s).`,
-//     );
+//     console.log(`[attendance-cleanup] Auto-closed ${closedCount} stale session(s).`);
 //   }
 // }
 
 // function startAttendanceCleanupJob() {
 //   closeAllStaleOpenSessions().catch((err) =>
-//     console.error("[attendance-cleanup] initial run failed:", err),
+//     console.error("[attendance-cleanup] initial run failed:", err)
 //   );
 
-//   setInterval(
-//     () => {
-//       closeAllStaleOpenSessions().catch((err) =>
-//         console.error("[attendance-cleanup] scheduled run failed:", err),
-//       );
-//     },
-//     60 * 60 * 1000,
-//   ); // every hour — days-old stale sessions
+//   setInterval(() => {
+//     closeAllStaleOpenSessions().catch((err) =>
+//       console.error("[attendance-cleanup] scheduled run failed:", err)
+//     );
+//   }, 60 * 60 * 1000);
 
 //   setInterval(() => {
 //     closeInactiveOpenSessionsToday().catch((err) =>
-//       console.error("[attendance-watchdog] scheduled run failed:", err),
+//       console.error("[attendance-watchdog] scheduled run failed:", err)
 //     );
-//   }, WATCHDOG_INTERVAL_MS); // every 30s — today's sleep/suspend/dead-tab sessions
+//   }, WATCHDOG_INTERVAL_MS);
 // }
 
 // module.exports = {
@@ -434,8 +356,18 @@
 //   recordCheckIn,
 //   ensureCheckedInToday,
 //   hasPendingApproval,
+//   isPermanentlyResolvedByApproval,
 //   startOfDay,
 // };
+
+
+
+
+
+
+
+
+
 
 
 
@@ -456,15 +388,89 @@ const Attendance = require("../models/Attendance");
 const User = require("../models/User");
 const socket = require("../socket");
 
-function startOfDay(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
+// ============================================================
+// TIMEZONE FIX
+// ============================================================
+// The whole system computes "start of day" / "end of day" using
+// setHours(), which runs in the SERVER PROCESS's local timezone.
+// If the server runs in UTC but the business timezone is IST
+// (+5:30), every day-boundary timestamp is off by 5.5 hours — this
+// is exactly why auto-closed sessions were showing "05:29 am"
+// (23:59:59 UTC rendered in IST on the browser) instead of midnight,
+// and why some durations came out blank/negative.
+//
+// Fix: compute boundaries against a FIXED offset, independent of
+// whatever timezone the server OS/process happens to be in.
+// ============================================================
+
+const TZ_OFFSET_MINUTES = 330; // IST = UTC+5:30. Change if your business timezone differs.
+
+function toBusinessTime(date) {
+  return new Date(date.getTime() + TZ_OFFSET_MINUTES * 60 * 1000);
 }
 
+function fromBusinessTime(shifted) {
+  return new Date(shifted.getTime() - TZ_OFFSET_MINUTES * 60 * 1000);
+}
 
-const INACTIVITY_THRESHOLD_MS = 60 * 1000; // 60s
-const WATCHDOG_INTERVAL_MS = 30 * 1000; // check every 30s
+function startOfDay(d = new Date()) {
+  const shifted = toBusinessTime(d);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return fromBusinessTime(shifted);
+}
+
+function endOfDay(d = new Date()) {
+  const shifted = toBusinessTime(d);
+  shifted.setUTCHours(23, 59, 59, 999);
+  return fromBusinessTime(shifted);
+}
+
+// ============================================================
+// SESSION-THRASHING FIX
+// ============================================================
+// Old threshold closed a session after 60s idle, and the very next
+// socket ping immediately reopened a new one — producing dozens of
+// 0m/1m rows per day. Raised to match the app's own idle-hold
+// standard elsewhere (3 min), and the watchdog checks less often too.
+// ============================================================
+
+const INACTIVITY_THRESHOLD_MS = 3 * 60 * 1000; // was 60s — way too aggressive
+const WATCHDOG_INTERVAL_MS = 60 * 1000; // was 30s
+
+// If a session closes and activity resumes within this window,
+// REOPEN the same session instead of starting a brand-new one. This
+// is what actually kills the rapid-fire duplicate-session pattern.
+const REOPEN_GRACE_MS = 2 * 60 * 1000;
+
+// ============================================================
+// PER-USER LOCK — serializes concurrent writes to the same user's
+// Attendance document. recordCheckIn / ensureCheckedInToday /
+// closeOpenSessionNow / the watchdog were all doing independent
+// read-modify-save on the same doc with no coordination, which is
+// how a logout write and a reopen write could race and silently
+// overwrite each other. In-process lock — fine for a single Node
+// instance; if you run multiple server instances behind a load
+// balancer, this needs to move to a Mongo-atomic update or a
+// distributed lock (e.g. Redis) instead.
+// ============================================================
+
+const userLocks = new Map();
+
+async function withUserLock(userId, fn) {
+  const key = String(userId);
+  const prev = userLocks.get(key) || Promise.resolve();
+  let release;
+  const next = new Promise((resolve) => (release = resolve));
+  userLocks.set(key, prev.then(() => next));
+
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (userLocks.get(key) === next) userLocks.delete(key);
+  }
+}
 
 function broadcastCheckin(userId, name, loginTime) {
   try {
@@ -488,14 +494,6 @@ function broadcastCheckout(userId, logoutTime, sessionDuration, totalDuration, r
   }
 }
 
-/**
- * A session that was resolved through the admin-approval workflow is
- * PERMANENTLY finalized with an intentionally blank logoutTime.
- * needsApproval flips to false right after approval, so it can no
- * longer be used to protect the record from auto-close jobs — this
- * check (based on closeReason, which never changes again) is what
- * actually provides permanent protection.
- */
 function isPermanentlyResolvedByApproval(session) {
   return session.closeReason === "admin-approved";
 }
@@ -507,16 +505,20 @@ async function hasPendingApproval(userId) {
 
 /**
  * Closes out any open session on a day BEFORE today for this user.
- * Runs on every real check-in — covers "closed the tab days ago and just
- * came back" without waiting for the hourly sweep.
+ * Public entry point — acquires the lock itself.
  */
 async function closeStaleOpenSessions(userId) {
-  // Still-pending records are fully protected — leave them for the
-  // admin approval endpoint.
-  // if (await hasPendingApproval(userId)) {
-  //   console.log(`[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`);
-  //   return;
-  // }
+  return withUserLock(userId, () => closeStaleOpenSessionsUnlocked(userId));
+}
+
+// Internal variant assuming the caller already holds the lock —
+// avoids deadlocking against itself when called from inside
+// openOrResumeSession.
+async function closeStaleOpenSessionsUnlocked(userId) {
+  if (await hasPendingApproval(userId)) {
+    console.log(`[attendance-cleanup] Skipping stale-session close for ${userId} — pending admin approval`);
+    return;
+  }
 
   const today = startOfDay();
 
@@ -530,14 +532,10 @@ async function closeStaleOpenSessions(userId) {
     let changed = false;
 
     for (const session of doc.sessions) {
-      // FIXED: skip any session that was already resolved via admin
-      // approval — its blank logoutTime is intentional and permanent,
-      // not "still needs closing".
       if (isPermanentlyResolvedByApproval(session)) continue;
 
       if (!session.logoutTime) {
-        const endOfThatDay = new Date(doc.date);
-        endOfThatDay.setHours(23, 59, 59, 999);
+        const endOfThatDay = endOfDay(doc.date); // FIXED — IST-aware now
 
         const duration = Math.max(0, Math.floor((endOfThatDay - session.loginTime) / 1000));
         session.logoutTime = endOfThatDay;
@@ -551,53 +549,147 @@ async function closeStaleOpenSessions(userId) {
     }
 
     if (changed) {
-      doc.logoutTime = doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
+      doc.logoutTime = doc.logoutTime || endOfDay(doc.date);
+      doc.markModified("sessions");
       await doc.save();
     }
   }
 }
 
 /**
- * Closes a user's currently-open session using the REAL current time.
- * Called on: beacon (tab close), confirmed socket disconnect, or manual
- * logout. Race-safe — if nothing's open, this is a harmless no-op.
+ * Closes a user's currently-open session using the real current time.
  */
 async function closeOpenSessionNow(userId, reason = "manual") {
-  const today = startOfDay();
-  const attendance = await Attendance.findOne({ user: userId, date: today });
-  if (!attendance) return null;
+  return withUserLock(userId, async () => {
+    const today = startOfDay();
+    const attendance = await Attendance.findOne({ user: userId, date: today });
+    if (!attendance) return null;
 
-  const now = new Date();
-  let openSession = null;
+    const now = new Date();
 
-  for (let i = attendance.sessions.length - 1; i >= 0; i--) {
-    if (!attendance.sessions[i].logoutTime) {
-      openSession = attendance.sessions[i];
-      break;
+    // FIXED — close EVERY open session, not just the most recent one.
+    // Old code walked from the end and stopped at the first open
+    // session it found, leaving any EARLIER orphaned-open session
+    // (a leftover from the race-condition bug) stuck open forever —
+    // which is exactly why "Missing logout" kept showing even after
+    // an explicit logout closed the latest session.
+    let anyClosed = false;
+    let lastDuration = 0;
+
+    for (const session of attendance.sessions) {
+      if (session.logoutTime) continue; // already closed
+
+      const duration = Math.max(0, Math.floor((now - session.loginTime) / 1000));
+      session.logoutTime = now;
+      session.duration = duration;
+      session.autoClosed = reason !== "manual";
+      session.closeReason = reason;
+
+      attendance.totalDuration += duration;
+      lastDuration = duration;
+      anyClosed = true;
     }
-  }
 
-  if (!openSession) return attendance; // already closed — nothing to do
+    if (!anyClosed) return attendance; // nothing was open — no-op
 
-  const duration = Math.max(0, Math.floor((now - openSession.loginTime) / 1000));
-  openSession.logoutTime = now;
-  openSession.duration = duration;
-  openSession.autoClosed = reason !== "manual";
-  openSession.closeReason = reason;
+    attendance.logoutTime = now;
+    attendance.markModified("sessions");
+    await attendance.save();
 
-  attendance.totalDuration += duration;
-  attendance.logoutTime = now;
-  await attendance.save();
+    broadcastCheckout(userId, now, lastDuration, attendance.totalDuration, reason);
 
-  broadcastCheckout(userId, now, duration, attendance.totalDuration, reason);
-
-  return attendance;
+    return attendance;
+  });
 }
 
 /**
- * Heartbeat watchdog — only ever touches TODAY's date, and admin
- * approval only ever resolves PREVIOUS days, so there's no overlap
- * here. No guard needed.
+ * Core "make sure there's an open session right now" logic, shared by
+ * recordCheckIn and ensureCheckedInToday. This is where the reopen
+ * grace window lives — if the most recent session closed within the
+ * last REOPEN_GRACE_MS, we undo that close instead of starting a new
+ * session, collapsing brief disconnect/reconnect flicker into one
+ * continuous entry instead of fragmenting it.
+ */
+async function openOrResumeSession(userId, userName, { runStaleCleanup } = {}) {
+  return withUserLock(userId, async () => {
+    if (runStaleCleanup) {
+      if (await hasPendingApproval(userId)) {
+        console.log(`[attendance-cleanup] blocked for ${userId} — pending admin approval`);
+        return null;
+      }
+      await closeStaleOpenSessionsUnlocked(userId);
+    } else if (await hasPendingApproval(userId)) {
+      return null;
+    }
+
+    const today = startOfDay();
+    const now = new Date();
+
+    let attendance = await Attendance.findOne({ user: userId, date: today });
+
+    if (!attendance) {
+      attendance = await Attendance.create({
+        user: userId,
+        date: today,
+        loginTime: now,
+        sessions: [{ loginTime: now }],
+      });
+      broadcastCheckin(userId, userName, now);
+      return attendance;
+    }
+
+    const lastSession = attendance.sessions[attendance.sessions.length - 1];
+    const alreadyOpen = lastSession && !lastSession.logoutTime;
+
+    if (alreadyOpen) return attendance; // nothing to do
+
+    // ── REOPEN, don't duplicate, if it closed very recently ──
+    if (
+      lastSession &&
+      lastSession.logoutTime &&
+      !isPermanentlyResolvedByApproval(lastSession) &&
+      now.getTime() - new Date(lastSession.logoutTime).getTime() <= REOPEN_GRACE_MS
+    ) {
+      attendance.totalDuration = Math.max(0, attendance.totalDuration - (lastSession.duration || 0));
+      lastSession.logoutTime = null;
+      lastSession.duration = 0;
+      lastSession.autoClosed = false;
+      lastSession.closeReason = "manual";
+      attendance.markModified("sessions");
+      await attendance.save();
+      return attendance;
+    }
+
+    // Otherwise, genuinely start a new session entry.
+    attendance.sessions.push({ loginTime: now });
+    attendance.markModified("sessions");
+    await attendance.save();
+
+    broadcastCheckin(userId, userName, now);
+    return attendance;
+  });
+}
+
+/**
+ * Opens a new session for "right now". Used by password login AND the
+ * frontend calling in on tab reopen.
+ */
+async function recordCheckIn(userId, userName = null) {
+  return openOrResumeSession(userId, userName, { runStaleCleanup: true });
+}
+
+/**
+ * Lightweight reopen used by high-frequency socket events. Now shares
+ * the SAME locked, grace-window-aware logic as recordCheckIn instead
+ * of its own separate (racy) read-modify-save — this is the direct
+ * fix for the dozens-of-0m-sessions pattern.
+ */
+async function ensureCheckedInToday(userId) {
+  return openOrResumeSession(userId, null, { runStaleCleanup: false });
+}
+
+/**
+ * Heartbeat watchdog.
  */
 async function closeInactiveOpenSessionsToday() {
   const today = startOfDay();
@@ -608,130 +700,38 @@ async function closeInactiveOpenSessionsToday() {
   });
 
   for (const doc of openDocs) {
-    const openSession = [...doc.sessions].reverse().find((s) => !s.logoutTime);
-    if (!openSession) continue;
+    await withUserLock(doc.user, async () => {
+      const fresh = await Attendance.findById(doc._id);
+      if (!fresh) return;
 
-    const user = await User.findById(doc.user).select("lastSeen").lean();
-    const lastSeen = user?.lastSeen ? new Date(user.lastSeen) : null;
+      const openSession = [...fresh.sessions].reverse().find((s) => !s.logoutTime);
+      if (!openSession) return;
 
-    if (!lastSeen || Date.now() - lastSeen.getTime() < INACTIVITY_THRESHOLD_MS) continue;
+      const user = await User.findById(fresh.user).select("lastSeen").lean();
+      const lastSeen = user?.lastSeen ? new Date(user.lastSeen) : null;
 
-    const closeAt = lastSeen > openSession.loginTime ? lastSeen : openSession.loginTime;
+      if (!lastSeen || Date.now() - lastSeen.getTime() < INACTIVITY_THRESHOLD_MS) return;
 
-    const duration = Math.max(0, Math.floor((closeAt - openSession.loginTime) / 1000));
-    openSession.logoutTime = closeAt;
-    openSession.duration = duration;
-    openSession.autoClosed = true;
-    openSession.closeReason = "disconnect";
+      const closeAt = lastSeen > openSession.loginTime ? lastSeen : openSession.loginTime;
 
-    doc.totalDuration += duration;
-    doc.logoutTime = closeAt;
-    await doc.save();
+      const duration = Math.max(0, Math.floor((closeAt - openSession.loginTime) / 1000));
+      openSession.logoutTime = closeAt;
+      openSession.duration = duration;
+      openSession.autoClosed = true;
+      openSession.closeReason = "disconnect";
 
-    broadcastCheckout(doc.user, closeAt, duration, doc.totalDuration, "disconnect");
-  }
-}
+      fresh.totalDuration += duration;
+      fresh.logoutTime = closeAt;
+      fresh.markModified("sessions");
+      await fresh.save();
 
-/**
- * Opens a new session for "right now". Used by password login AND the
- * frontend calling in on tab reopen (existing valid token, no fresh
- * /login call).
- */
-async function recordCheckIn(userId, userName = null) {
-  // if (await hasPendingApproval(userId)) {
-  //   console.log(`[attendance-cleanup] recordCheckIn blocked for ${userId} — pending admin approval`);
-  //   return null;
-  // }
-
-  await closeStaleOpenSessions(userId);
-
-  const today = startOfDay();
-  const now = new Date();
-
-  let attendance;
-
-  try {
-    attendance = await Attendance.findOne({ user: userId, date: today });
-
-    if (!attendance) {
-      attendance = await Attendance.create({
-        user: userId,
-        date: today,
-        loginTime: now,
-        sessions: [{ loginTime: now }],
-      });
-    } else {
-      const lastSession = attendance.sessions[attendance.sessions.length - 1];
-      const alreadyOpen = lastSession && !lastSession.logoutTime;
-
-      if (!alreadyOpen) {
-        attendance.sessions.push({ loginTime: now });
-        await attendance.save();
-      } else {
-        return attendance;
-      }
-    }
-  } catch (err) {
-    if (err.code === 11000) {
-      attendance = await Attendance.findOne({ user: userId, date: today });
-      if (attendance) {
-        const lastSession = attendance.sessions[attendance.sessions.length - 1];
-        const alreadyOpen = lastSession && !lastSession.logoutTime;
-        if (!alreadyOpen) {
-          attendance.sessions.push({ loginTime: now });
-          await attendance.save();
-        }
-      } else {
-        throw err;
-      }
-    } else {
-      throw err;
-    }
-  }
-
-  broadcastCheckin(userId, userName, now);
-  return attendance;
-}
-
-/**
- * Lightweight reopen used by high-frequency socket events (join-user,
- * presence-ping) — THIS is the function that fires on every page
- * refresh, and was the direct trigger for the bug you're seeing.
- */
-async function ensureCheckedInToday(userId) {
-  if (await hasPendingApproval(userId)) {
-    return null;
-  }
-
-  const today = startOfDay();
-  const now = new Date();
-
-  let attendance = await Attendance.findOne({ user: userId, date: today });
-
-  if (!attendance) {
-    attendance = await Attendance.create({
-      user: userId,
-      date: today,
-      loginTime: now,
-      sessions: [{ loginTime: now }],
+      broadcastCheckout(fresh.user, closeAt, duration, fresh.totalDuration, "disconnect");
     });
-    broadcastCheckin(userId, null, now);
-    return attendance;
   }
-
-  const lastSession = attendance.sessions[attendance.sessions.length - 1];
-  const alreadyOpen = lastSession && !lastSession.logoutTime;
-  if (alreadyOpen) return attendance;
-
-  attendance.sessions.push({ loginTime: now });
-  await attendance.save();
-  broadcastCheckin(userId, null, now);
-  return attendance;
 }
 
 /**
- * Hourly safety-net sweep — catches people who NEVER come back (quit,
- * multi-day absence) and whose sessions would otherwise stay open forever.
+ * Hourly safety-net sweep.
  */
 async function closeAllStaleOpenSessions() {
   const today = startOfDay();
@@ -745,37 +745,38 @@ async function closeAllStaleOpenSessions() {
   let closedCount = 0;
 
   for (const doc of staleDocs) {
-    let changed = false;
+    await withUserLock(doc.user, async () => {
+      const fresh = await Attendance.findById(doc._id);
+      if (!fresh) return;
 
-    for (const session of doc.sessions) {
-      // FIXED: same permanent-resolution guard as closeStaleOpenSessions.
-      // Without this, the hourly cron alone is enough to silently
-      // overwrite an admin-approved blank checkout with a fabricated
-      // 11:59 PM end-of-day time — which is exactly what you saw.
-      if (isPermanentlyResolvedByApproval(session)) continue;
+      let changed = false;
 
-      if (!session.logoutTime) {
-        const endOfThatDay = new Date(doc.date);
-        endOfThatDay.setHours(23, 59, 59, 999);
+      for (const session of fresh.sessions) {
+        if (isPermanentlyResolvedByApproval(session)) continue;
 
-        const duration = Math.max(0, Math.floor((endOfThatDay - session.loginTime) / 1000));
-        session.logoutTime = endOfThatDay;
-        session.duration = duration;
-        session.autoClosed = true;
-        session.closeReason = "daily-sweep";
+        if (!session.logoutTime) {
+          const endOfThatDay = endOfDay(fresh.date); // FIXED — IST-aware
 
-        doc.totalDuration += duration;
-        changed = true;
+          const duration = Math.max(0, Math.floor((endOfThatDay - session.loginTime) / 1000));
+          session.logoutTime = endOfThatDay;
+          session.duration = duration;
+          session.autoClosed = true;
+          session.closeReason = "daily-sweep";
+
+          fresh.totalDuration += duration;
+          changed = true;
+        }
       }
-    }
 
-    if (changed) {
-      doc.logoutTime = doc.logoutTime || new Date(doc.date).setHours(23, 59, 59, 999);
-      await doc.save();
-      closedCount++;
+      if (changed) {
+        fresh.logoutTime = fresh.logoutTime || endOfDay(fresh.date);
+        fresh.markModified("sessions");
+        await fresh.save();
+        closedCount++;
 
-      broadcastCheckout(doc.user, doc.logoutTime, 0, doc.totalDuration, "daily-sweep");
-    }
+        broadcastCheckout(fresh.user, fresh.logoutTime, 0, fresh.totalDuration, "daily-sweep");
+      }
+    });
   }
 
   if (closedCount > 0) {
@@ -811,4 +812,5 @@ module.exports = {
   hasPendingApproval,
   isPermanentlyResolvedByApproval,
   startOfDay,
+  endOfDay,
 };
