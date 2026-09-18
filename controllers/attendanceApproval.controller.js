@@ -384,11 +384,52 @@ async function isAdminUser(userId) {
 // GET /api/attendance/pending-approval/me
 // ============================================================
 
+// exports.getMyPendingApproval = async (req, res) => {
+//   try {
+//     const userId = req.user?._id || req.user?.id;
+
+//     // NEW — admins are never blocked by this guard.
+//     if (await isAdminUser(userId)) {
+//       return res.json({ success: true, blocked: false });
+//     }
+
+//     const today = startOfDay();
+
+//     const record = await Attendance.findOne({
+//       user: userId,
+//       date: { $lt: today },
+//       needsApproval: true,
+//     }).sort({ date: -1 });
+
+//     if (!record) {
+//       return res.json({ success: true, blocked: false });
+//     }
+
+//     const openSession = [...record.sessions]
+//       .reverse()
+//       .find((s) => !s.logoutTime);
+
+//     return res.json({
+//       success: true,
+//       blocked: true,
+//       data: {
+//         date: record.date,
+//         loginTime: openSession?.loginTime || record.loginTime,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("getMyPendingApproval error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+
+
 exports.getMyPendingApproval = async (req, res) => {
   try {
     const userId = req.user?._id || req.user?.id;
 
-    // NEW — admins are never blocked by this guard.
+    // Admin users are never blocked
     if (await isAdminUser(userId)) {
       return res.json({ success: true, blocked: false });
     }
@@ -405,23 +446,49 @@ exports.getMyPendingApproval = async (req, res) => {
       return res.json({ success: true, blocked: false });
     }
 
-    const openSession = [...record.sessions]
-      .reverse()
-      .find((s) => !s.logoutTime);
+    const sessions = record.sessions || [];
+
+    // Only the LAST session can require approval
+    const lastSession = sessions[sessions.length - 1];
+
+    if (!lastSession || lastSession.logoutTime) {
+      record.needsApproval = false;
+      await record.save();
+
+      return res.json({
+        success: true,
+        blocked: false,
+      });
+    }
+
+    // Already approved → allow login
+    if (lastSession.logoutType === "ADMIN_APPROVED") {
+      record.needsApproval = false;
+      await record.save();
+
+      return res.json({
+        success: true,
+        blocked: false,
+      });
+    }
 
     return res.json({
       success: true,
       blocked: true,
       data: {
         date: record.date,
-        loginTime: openSession?.loginTime || record.loginTime,
+        loginTime: lastSession.loginTime,
       },
     });
   } catch (err) {
     console.error("getMyPendingApproval error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
+
 
 // ============================================================
 // GET /api/attendance/pending-approvals   (ADMIN)
@@ -441,21 +508,43 @@ exports.listPendingApprovals = async (req, res) => {
         // NEW — never surface an admin's own record in this table.
         if (record.user.role?.name === "ADMIN") return null;
 
-        const openSession = [...(record.sessions || [])]
-          .reverse()
-          .find((s) => !s.logoutTime);
+        // const openSession = [...(record.sessions || [])]
+        //   .reverse()
+        //   .find((s) => !s.logoutTime);
 
-        if (!openSession) return null;
+        // if (!openSession) return null;
 
-        return {
-          attendanceId: record._id,
-          userId: record.user._id,
-          name: record.user.name,
-          email: record.user.email,
-          date: record.date,
-          loginTime: openSession.loginTime,
-          sessionId: openSession._id,
-        };
+        // return {
+        //   attendanceId: record._id,
+        //   userId: record.user._id,
+        //   name: record.user.name,
+        //   email: record.user.email,
+        //   date: record.date,
+        //   loginTime: openSession.loginTime,
+        //   sessionId: openSession._id,
+        // };
+
+
+
+
+        const sessions = record.sessions || [];
+
+// only last session without logout
+const lastSession = sessions[sessions.length - 1];
+
+if (!lastSession || lastSession.logoutTime) return null;
+
+return {
+  attendanceId: record._id,
+  userId: record.user._id,
+  name: record.user.name,
+  email: record.user.email,
+  date: record.date,
+  loginTime: lastSession.loginTime,
+  sessionId: lastSession._id,
+};
+
+
       })
       .filter(Boolean);
 
@@ -705,6 +794,78 @@ exports.approvePreviousLogout = async (req, res) => {
 // GET /api/attendance/missing-logout-summary   (ADMIN)
 // ============================================================
 
+// exports.getMissingLogoutSummary = async (req, res) => {
+//   try {
+//     const records = await Attendance.find({
+//       $or: [
+//         { needsApproval: true },
+//         { "sessions.logoutType": "ADMIN_APPROVED" },
+//       ],
+//     })
+//       .populate({ path: "user", select: "name email role", populate: { path: "role", select: "name" } })
+//       .sort({ date: 1 })
+//       .lean();
+
+//     const byUser = new Map();
+
+//     for (const record of records) {
+//       if (!record.user) continue;
+
+//       // NEW — skip admin accounts entirely.
+//       if (record.user.role?.name === "ADMIN") continue;
+
+//       const sessions = Array.isArray(record.sessions) ? record.sessions : [];
+
+//       for (const session of sessions) {
+//         const isPending = record.needsApproval && !session.logoutTime;
+//         const isApproved = session.logoutType === "ADMIN_APPROVED";
+
+//         if (!isPending && !isApproved) continue;
+
+//         const userId = String(record.user._id);
+
+//         if (!byUser.has(userId)) {
+//           byUser.set(userId, {
+//             userId,
+//             name: record.user.name,
+//             email: record.user.email,
+//             totalCount: 0,
+//             pendingCount: 0,
+//             approvedCount: 0,
+//             incidents: [],
+//           });
+//         }
+
+//         const entry = byUser.get(userId);
+
+//         entry.totalCount += 1;
+//         if (isPending) entry.pendingCount += 1;
+//         if (isApproved) entry.approvedCount += 1;
+
+//         entry.incidents.push({
+//           date: record.date,
+//           loginTime: session.loginTime,
+//           status: isPending ? "PENDING" : "APPROVED",
+//           approvedBy: session.approvedBy || null,
+//           approvedAt: session.approvedAt || null,
+//         });
+//       }
+//     }
+
+//     const summary = Array.from(byUser.values()).sort(
+//       (a, b) => b.totalCount - a.totalCount
+//     );
+
+//     res.json({ success: true, data: summary });
+//   } catch (err) {
+//     console.error("getMissingLogoutSummary error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+
+
+
 exports.getMissingLogoutSummary = async (req, res) => {
   try {
     const records = await Attendance.find({
@@ -713,8 +874,12 @@ exports.getMissingLogoutSummary = async (req, res) => {
         { "sessions.logoutType": "ADMIN_APPROVED" },
       ],
     })
-      .populate({ path: "user", select: "name email role", populate: { path: "role", select: "name" } })
-      .sort({ date: 1 })
+      .populate({
+        path: "user",
+        select: "name email role",
+        populate: { path: "role", select: "name" },
+      })
+      .sort({ date: -1 })
       .lean();
 
     const byUser = new Map();
@@ -722,14 +887,22 @@ exports.getMissingLogoutSummary = async (req, res) => {
     for (const record of records) {
       if (!record.user) continue;
 
-      // NEW — skip admin accounts entirely.
       if (record.user.role?.name === "ADMIN") continue;
 
-      const sessions = Array.isArray(record.sessions) ? record.sessions : [];
+      const sessions = record.sessions || [];
 
-      for (const session of sessions) {
-        const isPending = record.needsApproval && !session.logoutTime;
-        const isApproved = session.logoutType === "ADMIN_APPROVED";
+      for (let index = 0; index < sessions.length; index++) {
+        const session = sessions[index];
+
+        // Only LAST session without logout = Pending
+        const isPending =
+          record.needsApproval &&
+          index === sessions.length - 1 &&
+          !session.logoutTime;
+
+        // Already approved missing logout
+        const isApproved =
+          session.logoutType === "ADMIN_APPROVED";
 
         if (!isPending && !isApproved) continue;
 
@@ -749,9 +922,10 @@ exports.getMissingLogoutSummary = async (req, res) => {
 
         const entry = byUser.get(userId);
 
-        entry.totalCount += 1;
-        if (isPending) entry.pendingCount += 1;
-        if (isApproved) entry.approvedCount += 1;
+        entry.totalCount++;
+
+        if (isPending) entry.pendingCount++;
+        if (isApproved) entry.approvedCount++;
 
         entry.incidents.push({
           date: record.date,
@@ -763,16 +937,24 @@ exports.getMissingLogoutSummary = async (req, res) => {
       }
     }
 
-    const summary = Array.from(byUser.values()).sort(
+    const summary = [...byUser.values()].sort(
       (a, b) => b.totalCount - a.totalCount
     );
 
-    res.json({ success: true, data: summary });
+    res.json({
+      success: true,
+      data: summary,
+    });
   } catch (err) {
-    console.error("getMissingLogoutSummary error:", err);
-    res.status(500).json({ success: false, message: err.message });
+    console.error("getMissingLogoutSummary:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
+
+
 
 // ============================================================
 // GET /api/attendance/missing-logout/:userId   (ADMIN)

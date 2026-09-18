@@ -95,19 +95,39 @@ router.get("/employee/:id", async (req, res) => {
 
     // ── Date window from query params ─────────────────────────────────────────
     // ALL filtering is based on start_date
-    const window = buildDateWindow(req.query);
+    // const window = buildDateWindow(req.query);
 
-    const now = new Date();
+    // const now = new Date();
 
     // ── Tasks filtered by window (start_date) ─────────────────────────────────
-    const dbQuery = { assigned_to: id };
-    if (window) {
-      dbQuery.start_date = { $gte: window.start, $lte: window.end };
-    }
+    // const dbQuery = { assigned_to: id };
+    // if (window) {
+    //   dbQuery.start_date = { $gte: window.start, $lte: window.end };
+    // }
 
-    const allTasks = await Task.find(dbQuery)
-      .populate("project", "name")
-      .lean();
+    // const allTasks = await Task.find(dbQuery)
+    //   .populate("project", "name")
+    //   .lean();
+
+
+    // Date window
+const window = buildDateWindow(req.query);
+
+const now = new Date();
+
+// Filter by Task Start Date
+const dbQuery = { assigned_to: id };
+
+if (window) {
+  dbQuery.start_date = {
+    $gte: window.start,
+    $lte: window.end,
+  };
+}
+
+const allTasks = await Task.find(dbQuery)
+  .populate("project", "name")
+  .lean();
 
     // ─── Summary ──────────────────────────────────────────────────────────────
     const total = allTasks.length;
@@ -170,11 +190,20 @@ router.get("/employee/:id", async (req, res) => {
       dayEnd.setHours(23, 59, 59, 999);
 
       // Both assigned & completed bucketed by start_date
-      const dayTasks = allTasks.filter(
-        (t) =>
-          new Date(t.start_date) >= dayStart &&
-          new Date(t.start_date) <= dayEnd,
-      );
+
+      // const dayTasks = allTasks.filter(
+      //   (t) =>
+      //     new Date(t.start_date) >= dayStart &&
+      //     new Date(t.start_date) <= dayEnd,
+      // );
+
+      const dayTasks = allTasks.filter((t) => {
+  if (!t.start_date) return false;
+
+  const startDate = new Date(t.start_date);
+  return startDate >= dayStart && startDate <= dayEnd;
+});
+
 
       return {
         day: dayName,
@@ -208,10 +237,18 @@ router.get("/employee/:id", async (req, res) => {
       const mEnd = new Date(currentYear, i + 1, 0, 23, 59, 59, 999);
 
       // Both assigned & completed bucketed by start_date
-      const monthTasks = allTasks.filter(
-        (t) =>
-          new Date(t.start_date) >= mStart && new Date(t.start_date) <= mEnd,
-      );
+      // const monthTasks = allTasks.filter(
+      //   (t) =>
+      //     new Date(t.start_date) >= mStart && new Date(t.start_date) <= mEnd,
+      // );
+
+
+      const monthTasks = allTasks.filter((t) => {
+  if (!t.start_date) return false;
+
+  const startDate = new Date(t.start_date);
+  return startDate >= mStart && startDate <= mEnd;
+});
 
       return {
         month: monthName,
@@ -244,10 +281,18 @@ router.get("/employee/:id", async (req, res) => {
       const yStart = new Date(yr, 0, 1, 0, 0, 0, 0);
       const yEnd = new Date(yr, 11, 31, 23, 59, 59, 999);
 
-      const yearTasks = allTasksForYearly.filter(
-        (t) =>
-          new Date(t.start_date) >= yStart && new Date(t.start_date) <= yEnd,
-      );
+      // const yearTasks = allTasksForYearly.filter(
+      //   (t) =>
+      //     new Date(t.start_date) >= yStart && new Date(t.start_date) <= yEnd,
+      // );
+
+
+      const yearTasks = allTasksForYearly.filter((t) => {
+  if (!t.start_date) return false;
+
+  const startDate = new Date(t.start_date);
+  return startDate >= yStart && startDate <= yEnd;
+});
 
       return {
         year: String(yr),
@@ -351,17 +396,37 @@ router.get("/employee/:id", async (req, res) => {
             : "Needs Improvement";
 
     // ─── Recent tasks (last 10, enriched with completionDays) ────────────────
+
+    // const recentTasks = [...allTasks]
+    //   .sort((a, b) => new Date(b.start_date) - new Date(a.start_date)) // newest start_date first
+    //   // .slice(0, 10)
+    //   .map((task) => {
+    //     let completionDays = null;
+    //     if (task.status === "DONE" && task.start_date && task.completedAt) {
+    //       const diffMs = new Date(task.completedAt) - new Date(task.start_date);
+    //       completionDays = Number((diffMs / (1000 * 60 * 60 * 24)).toFixed(1));
+    //     }
+    //     return { ...task, completionDays };
+    //   });
+
+
     const recentTasks = [...allTasks]
-      .sort((a, b) => new Date(b.start_date) - new Date(a.start_date)) // newest start_date first
-      // .slice(0, 10)
-      .map((task) => {
-        let completionDays = null;
-        if (task.status === "DONE" && task.start_date && task.completedAt) {
-          const diffMs = new Date(task.completedAt) - new Date(task.start_date);
-          completionDays = Number((diffMs / (1000 * 60 * 60 * 24)).toFixed(1));
-        }
-        return { ...task, completionDays };
-      });
+  .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
+  .map((task) => {
+    let completionDays = null;
+
+    if (task.status === "DONE" && task.start_date && task.completedAt) {
+      const diff =
+        new Date(task.completedAt) - new Date(task.start_date);
+
+      completionDays = Number(
+        (diff / (1000 * 60 * 60 * 24)).toFixed(1)
+      );
+    }
+
+    return { ...task, completionDays };
+  });
+
 
     // ─── Response ─────────────────────────────────────────────────────────────
     res.json({
