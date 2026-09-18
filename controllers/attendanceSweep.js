@@ -114,6 +114,11 @@ async function flagMissingLogouts() {
 function init() {
   cron.schedule("5 0 * * *", flagMissingLogouts);
   flagMissingLogouts();
+
+    console.log(
+    "[attendance-sweep] Disabled — stale-session handling now lives entirely in attendanceCleanup.js's startAttendanceCleanupJob()."
+  );
+  
 }
 
 module.exports = { init, flagMissingLogouts };
