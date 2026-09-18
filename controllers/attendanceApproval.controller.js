@@ -496,6 +496,361 @@
 
 
 
+// const Attendance = require("../models/Attendance");
+// const User = require("../models/User");
+// const socket = require("../socket");
+
+// function startOfDay(d = new Date()) {
+//   const x = new Date(d);
+//   x.setHours(0, 0, 0, 0);
+//   return x;
+// }
+
+// // ============================================================
+// // Shared helper — is this user an Admin? Admins are exempt from
+// // the entire missing-logout / approval workflow: never blocked,
+// // never listed for approval, never counted in history.
+// // ============================================================
+// async function isAdminUser(userId) {
+//   const user = await User.findById(userId).populate("role", "name");
+//   return user?.role?.name === "ADMIN";
+// }
+
+// // ============================================================
+// // GET /api/attendance/pending-approval/me
+// // ============================================================
+
+// exports.getMyPendingApproval = async (req, res) => {
+//   try {
+//     const userId = req.user?._id || req.user?.id;
+
+//     if (await isAdminUser(userId)) {
+//       return res.json({ success: true, blocked: false });
+//     }
+
+//     const today = startOfDay();
+
+//     const record = await Attendance.findOne({
+//       user: userId,
+//       date: { $lt: today },
+//       needsApproval: true,
+//     }).sort({ date: -1 });
+
+//     if (!record) {
+//       return res.json({ success: true, blocked: false });
+//     }
+
+//     const openSession = record.sessions[record.sessions.length - 1];
+//     const isTrailingOpen = openSession && !openSession.logoutTime;
+
+//     if (!isTrailingOpen) {
+//       // The gap was an earlier orphan, not the actual last session —
+//       // this shouldn't block the employee. Clear the stale flag.
+//       record.needsApproval = false;
+//       await record.save();
+//       return res.json({ success: true, blocked: false });
+//     }
+
+//     return res.json({
+//       success: true,
+//       blocked: true,
+//       data: {
+//         date: record.date,
+//         loginTime: openSession.loginTime,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("getMyPendingApproval error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+// // ============================================================
+// // GET /api/attendance/pending-approvals   (ADMIN)
+// // ============================================================
+
+// exports.listPendingApprovals = async (req, res) => {
+//   try {
+//     const records = await Attendance.find({ needsApproval: true })
+//       .populate({ path: "user", select: "name email role", populate: { path: "role", select: "name" } })
+//       .sort({ date: 1 })
+//       .lean();
+
+//     const rows = records
+//       .map((record) => {
+//         if (!record.user) return null;
+//         if (record.user.role?.name === "ADMIN") return null;
+
+//         const sessions = record.sessions || [];
+//         const lastSession = sessions[sessions.length - 1];
+//         const isTrailingOpen = lastSession && !lastSession.logoutTime;
+
+//         if (!isTrailingOpen) return null; // an earlier orphan, not a real pending case
+
+//         return {
+//           attendanceId: record._id,
+//           userId: record.user._id,
+//           name: record.user.name,
+//           email: record.user.email,
+//           date: record.date,
+//           loginTime: lastSession.loginTime,
+//           sessionId: lastSession._id,
+//         };
+//       })
+//       .filter(Boolean);
+
+//     res.json({ success: true, data: rows });
+//   } catch (err) {
+//     console.error("listPendingApprovals error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+// // ============================================================
+// // POST /api/attendance/approve-logout/:userId   (ADMIN)
+// // ============================================================
+
+// exports.approvePreviousLogout = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+//     const adminId = req.user?._id || req.user?.id;
+
+//     if (await isAdminUser(userId)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Admin accounts are exempt from the approval workflow",
+//       });
+//     }
+
+//     const record = await Attendance.findOne({
+//       user: userId,
+//       needsApproval: true,
+//     }).sort({ date: -1 });
+
+//     if (!record) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No pending approval found for this user",
+//       });
+//     }
+
+//     // FIXED — resolve EVERY open session in this record, not just the
+//     // last one found. Old code found a single openSessionIndex and
+//     // stopped there; if the record had more than one open session
+//     // (a leftover from the earlier race-condition bug), the others
+//     // stayed open forever even after "approval" — which is exactly
+//     // why the frontend kept showing "Missing logout" for a user who
+//     // had already been approved once.
+//     const approvedAt = new Date();
+//     let resolvedCount = 0;
+
+//     for (const session of record.sessions) {
+//       if (session.logoutTime) continue; // already closed — leave as-is
+
+//       session.logoutTime = null; // intentionally left blank, per your policy
+//       session.duration = 0;
+//       session.autoClosed = false;
+//       session.closeReason = "admin-approved";
+//       session.logoutType = "ADMIN_APPROVED";
+//       session.approvedBy = adminId;
+//       session.approvedAt = approvedAt;
+//       resolvedCount++;
+//     }
+
+//     if (resolvedCount === 0) {
+//       record.needsApproval = false;
+//       await record.save();
+//       return res.status(400).json({
+//         success: false,
+//         message: "No open session found — nothing to approve",
+//       });
+//     }
+
+//     record.logoutTime = null;
+//     record.needsApproval = false;
+
+//     record.markModified("sessions");
+//     await record.save();
+
+//     try {
+//       const io = socket.getIO();
+//       io.to(`user:${userId}`).emit("attendance-approved", {
+//         message:
+//           "Your previous attendance has been approved by Admin. Please login again to continue working.",
+//         approvedAt,
+//       });
+//       io.to(`user:${userId}`).emit("force-logout", {
+//         reason: "attendance-approved",
+//       });
+//       io.emit("pending-approval-resolved", { userId });
+//     } catch (err) {
+//       console.error("Socket emit (approve-logout) failed:", err.message);
+//     }
+
+//     res.json({
+//       success: true,
+//       message: `Previous session${resolvedCount > 1 ? "s" : ""} approved (checkout left blank)`,
+//       data: {
+//         logoutTime: null,
+//         logoutType: "ADMIN_APPROVED",
+//         approvedAt,
+//         sessionsResolved: resolvedCount,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("approvePreviousLogout error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+// // ============================================================
+// // GET /api/attendance/missing-logout-summary   (ADMIN)
+// // ============================================================
+
+// exports.getMissingLogoutSummary = async (req, res) => {
+//   try {
+//     const records = await Attendance.find({
+//       $or: [
+//         { needsApproval: true },
+//         { "sessions.logoutType": "ADMIN_APPROVED" },
+//       ],
+//     })
+//       .populate({ path: "user", select: "name email role", populate: { path: "role", select: "name" } })
+//       .sort({ date: 1 })
+//       .lean();
+
+//     const byUser = new Map();
+
+//     for (const record of records) {
+//       if (!record.user) continue;
+//       if (record.user.role?.name === "ADMIN") continue;
+
+//       const sessions = Array.isArray(record.sessions) ? record.sessions : [];
+
+//       for (const session of sessions) {
+//         const isPending = record.needsApproval && !session.logoutTime;
+//         const isApproved = session.logoutType === "ADMIN_APPROVED";
+
+//         if (!isPending && !isApproved) continue;
+
+//         const userId = String(record.user._id);
+
+//         if (!byUser.has(userId)) {
+//           byUser.set(userId, {
+//             userId,
+//             name: record.user.name,
+//             email: record.user.email,
+//             totalCount: 0,
+//             pendingCount: 0,
+//             approvedCount: 0,
+//             incidents: [],
+//           });
+//         }
+
+//         const entry = byUser.get(userId);
+
+//         entry.totalCount += 1;
+//         if (isPending) entry.pendingCount += 1;
+//         if (isApproved) entry.approvedCount += 1;
+
+//         entry.incidents.push({
+//           date: record.date,
+//           loginTime: session.loginTime,
+//           status: isPending ? "PENDING" : "APPROVED",
+//           approvedBy: session.approvedBy || null,
+//           approvedAt: session.approvedAt || null,
+//         });
+//       }
+//     }
+
+//     const summary = Array.from(byUser.values()).sort(
+//       (a, b) => b.totalCount - a.totalCount
+//     );
+
+//     res.json({ success: true, data: summary });
+//   } catch (err) {
+//     console.error("getMissingLogoutSummary error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+// // ============================================================
+// // GET /api/attendance/missing-logout/:userId   (ADMIN)
+// // ============================================================
+
+// exports.getMissingLogoutForUser = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     if (await isAdminUser(userId)) {
+//       return res.json({
+//         success: true,
+//         data: { totalCount: 0, pendingCount: 0, approvedCount: 0, incidents: [] },
+//       });
+//     }
+
+//     const records = await Attendance.find({
+//       user: userId,
+//       $or: [
+//         { needsApproval: true },
+//         { "sessions.logoutType": "ADMIN_APPROVED" },
+//       ],
+//     })
+//       .sort({ date: -1 })
+//       .lean();
+
+//     const incidents = [];
+
+//     for (const record of records) {
+//       const sessions = Array.isArray(record.sessions) ? record.sessions : [];
+
+//       for (const session of sessions) {
+//         const isPending = record.needsApproval && !session.logoutTime;
+//         const isApproved = session.logoutType === "ADMIN_APPROVED";
+
+//         if (!isPending && !isApproved) continue;
+
+//         incidents.push({
+//           date: record.date,
+//           loginTime: session.loginTime,
+//           status: isPending ? "PENDING" : "APPROVED",
+//           approvedBy: session.approvedBy || null,
+//           approvedAt: session.approvedAt || null,
+//         });
+//       }
+//     }
+
+//     res.json({
+//       success: true,
+//       data: {
+//         totalCount: incidents.length,
+//         pendingCount: incidents.filter((i) => i.status === "PENDING").length,
+//         approvedCount: incidents.filter((i) => i.status === "APPROVED").length,
+//         incidents,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("getMissingLogoutForUser error:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const Attendance = require("../models/Attendance");
 const User = require("../models/User");
 const socket = require("../socket");
@@ -571,7 +926,19 @@ exports.getMyPendingApproval = async (req, res) => {
 
 exports.listPendingApprovals = async (req, res) => {
   try {
-    const records = await Attendance.find({ needsApproval: true })
+    const today = startOfDay();
+
+    // FIX: this had NO date filter — it could surface TODAY's
+    // still-in-progress record as "Missing logout" the moment
+    // needsApproval was ever true on it, even though the person is
+    // still actively working and hasn't finished their day. The
+    // approval workflow only ever makes sense for a day that's
+    // already OVER — matching getMyPendingApproval's own
+    // `date: { $lt: today }` restriction.
+    const records = await Attendance.find({
+      needsApproval: true,
+      date: { $lt: today },
+    })
       .populate({ path: "user", select: "name email role", populate: { path: "role", select: "name" } })
       .sort({ date: 1 })
       .lean();
@@ -622,9 +989,16 @@ exports.approvePreviousLogout = async (req, res) => {
       });
     }
 
+    const today = startOfDay();
+
+    // FIX: scoped to date < today, same reasoning as listPendingApprovals
+    // above — approving is a "give up on this day, blank the checkout"
+    // action, and that should never be possible against a day that's
+    // still actively in progress.
     const record = await Attendance.findOne({
       user: userId,
       needsApproval: true,
+      date: { $lt: today },
     }).sort({ date: -1 });
 
     if (!record) {
@@ -634,13 +1008,10 @@ exports.approvePreviousLogout = async (req, res) => {
       });
     }
 
-    // FIXED — resolve EVERY open session in this record, not just the
-    // last one found. Old code found a single openSessionIndex and
-    // stopped there; if the record had more than one open session
-    // (a leftover from the earlier race-condition bug), the others
-    // stayed open forever even after "approval" — which is exactly
-    // why the frontend kept showing "Missing logout" for a user who
-    // had already been approved once.
+    // Resolve EVERY open session in this record, not just the last
+    // one found — a leftover from the earlier race-condition bug
+    // could otherwise leave an earlier session open forever even
+    // after "approval".
     const approvedAt = new Date();
     let resolvedCount = 0;
 
@@ -709,9 +1080,14 @@ exports.approvePreviousLogout = async (req, res) => {
 
 exports.getMissingLogoutSummary = async (req, res) => {
   try {
+    const today = startOfDay();
+
+    // FIX: same missing date filter as listPendingApprovals — without
+    // it, a needsApproval flag on today's in-progress record would
+    // also inflate this history/summary view incorrectly.
     const records = await Attendance.find({
       $or: [
-        { needsApproval: true },
+        { needsApproval: true, date: { $lt: today } },
         { "sessions.logoutType": "ADMIN_APPROVED" },
       ],
     })
@@ -789,10 +1165,15 @@ exports.getMissingLogoutForUser = async (req, res) => {
       });
     }
 
+    const today = startOfDay();
+
+    // FIX: same missing date filter — a today-flagged record would
+    // otherwise show up in this user's own history as an incident
+    // before their day is even over.
     const records = await Attendance.find({
       user: userId,
       $or: [
-        { needsApproval: true },
+        { needsApproval: true, date: { $lt: today } },
         { "sessions.logoutType": "ADMIN_APPROVED" },
       ],
     })
